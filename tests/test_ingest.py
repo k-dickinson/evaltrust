@@ -63,6 +63,15 @@ def test_missing_file_raises(tmp_path):
         load(str(tmp_path / "does_not_exist.json"))
 
 
+def test_malformed_json_gives_a_friendly_error(tmp_path):
+    p = write(tmp_path, "broken.json", "{ not valid json")
+    with pytest.raises(ValueError) as exc:
+        load(p)
+    msg = str(exc.value)
+    assert "broken.json" in msg
+    assert "JSON" in msg
+
+
 # --- two-file comparison (single-system tools) --------------------------------
 
 from evaltrust.core.ingest import load_comparison

@@ -48,7 +48,13 @@ def load(path: str) -> EvalData:
     if suffix == ".csv":
         return _load_csv(text)
     if suffix == ".json":
-        return _load_json(text)
+        try:
+            return _load_json(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Could not parse '{p.name}' as JSON (line {e.lineno}, "
+                f"column {e.colno}). Check that the file is valid JSON."
+            ) from e
 
     try:
         return _load_json(text)

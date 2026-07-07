@@ -14,9 +14,10 @@
 </p>
 
 <p align="center">
-  <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg">
-  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
-  <img alt="CI" src="https://github.com/k-dickinson/evaltrust/actions/workflows/ci.yml/badge.svg">
+  <a href="https://pypi.org/project/evaltrust/"><img alt="PyPI" src="https://img.shields.io/pypi/v/evaltrust.svg"></a>
+  <a href="https://pypi.org/project/evaltrust/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/evaltrust.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/pypi/l/evaltrust.svg"></a>
+  <a href="https://github.com/k-dickinson/evaltrust/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/k-dickinson/evaltrust/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 ---
@@ -67,31 +68,33 @@ catches it before it becomes a shipping decision.
 
 ## Installation
 
-> **Note:** EvalTrust is not yet published to PyPI. Once it is, installation will be
-> a single command:
->
-> ```bash
-> pip install evaltrust
-> ```
+```bash
+pip install evaltrust
+```
 
-Until then, install from source:
+Requires Python 3.10 or newer. That's the whole setup — no API keys, no config,
+no account.
+
+<details>
+<summary>Install from source (for development)</summary>
 
 ```bash
 git clone https://github.com/k-dickinson/evaltrust
 cd evaltrust
-pip install -e .
+pip install -e ".[dev]"
+pytest
 ```
+
+</details>
 
 ## Quick start
 
-<!-- TODO: expand once the packaged release and hosted docs are live. -->
-
 1. Run your evaluation with whatever tool you already use (DeepEval, Promptfoo,
-   LangSmith, OpenEvals, or a plain CSV).
-2. Point EvalTrust at the output:
+   LangSmith, OpenEvals, or a plain CSV) and save the output.
+2. Point EvalTrust at it:
 
    ```bash
-   # A file that already compares two or more models:
+   # A file that already compares two or more models (e.g. Promptfoo):
    evaltrust audit results.json
 
    # Two single-model runs (e.g. two DeepEval runs), paired by example id:
@@ -99,6 +102,15 @@ pip install -e .
    ```
 
 3. Read the verdict. Fix what it flags. Re-run.
+
+Want to see it work before pointing it at your own data? The repo ships sample
+files:
+
+```bash
+evaltrust audit examples/clean_win.json        # -> High Confidence
+evaltrust audit examples/borderline.json       # -> Moderate Confidence
+evaltrust audit examples/deepeval_gpt4.json examples/deepeval_claude.json
+```
 
 Useful flags:
 
@@ -166,8 +178,14 @@ resampling is seeded, so the auditor is itself reproducible. See
 ## Contributing
 
 Contributions are welcome — new format adapters and additional checks especially.
-Start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), and see [`RELEASING.md`](RELEASING.md)
+if you maintain releases. All participants are expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Report security issues per the
+[security policy](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE).
+EvalTrust is released under the [MIT License](LICENSE) — a permissive,
+OSI-approved license. Anyone, including companies and organizations, may use,
+modify, and distribute it, in commercial or proprietary settings, free of charge.
+There is no copyleft obligation and no contributor license agreement to sign.
