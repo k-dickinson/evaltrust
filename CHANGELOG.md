@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `--md` flag: emit the audit as Markdown that drops cleanly into a PR comment
+  or a doc. Works for single audits and multi-metric suites; `--explain` adds
+  the per-finding detail.
+
 ## [0.5.0] — 2026-07-08
 
 ### Added

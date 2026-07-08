@@ -27,6 +27,7 @@ from .config import AuditConfig
 from .core.ingest import load_comparison, load_suite
 from .diff import compare
 from .report.html import render_html
+from .report.markdown import render_markdown, render_suite_markdown
 from .report.terminal import (
     print_diff,
     print_report,
@@ -81,6 +82,8 @@ def audit(
         False, "--json", help="Emit the audit as JSON (for CI and tooling)."),
     html_out: Optional[str] = typer.Option(
         None, "--html", help="Write the audit as a standalone HTML file to this path."),
+    as_md: bool = typer.Option(
+        False, "--md", help="Emit the audit as Markdown (drops into a PR comment or doc)."),
     plain: bool = typer.Option(
         False, "--plain", help="Plain ASCII output (no colour or Unicode)."),
     explain: bool = typer.Option(
@@ -137,6 +140,8 @@ def audit(
     if suite_report is not None:
         if as_json:
             typer.echo(json.dumps(suite_report.to_dict(), indent=2))
+        elif as_md:
+            typer.echo(render_suite_markdown(suite_report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_suite_plain(suite_report, explain=explain), nl=False)
         else:
@@ -145,6 +150,8 @@ def audit(
     else:
         if as_json:
             typer.echo(json.dumps(report.to_dict(), indent=2))
+        elif as_md:
+            typer.echo(render_markdown(report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_plain(report, explain=explain), nl=False)
         else:

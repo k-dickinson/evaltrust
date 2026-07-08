@@ -246,3 +246,25 @@ def test_explain_flag_adds_detail(tmp_path):
     detailed = runner.invoke(app, ["audit", noise_file(tmp_path), "--explain"])
     assert "Detail" not in base.stdout
     assert "Detail" in detailed.stdout
+
+
+def test_md_output_contains_verdict_and_finding_titles(tmp_path):
+    result = runner.invoke(app, ["audit", clean_win_file(tmp_path), "--md"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("# EvalTrust")
+    assert "High Confidence" in result.stdout
+    # No rich box characters in Markdown mode.
+    assert "╭" not in result.stdout
+
+
+def test_md_flag_works_for_multi_metric_suites(tmp_path):
+    result = runner.invoke(app, ["audit", multi_metric_file(tmp_path), "--md"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("# EvalTrust")
+    assert "correctness" in result.stdout and "tone" in result.stdout
+
+
+def test_md_output_still_respects_fail_under(tmp_path):
+    result = runner.invoke(app, ["audit", noise_file(tmp_path), "--md",
+                                 "--fail-under", "moderate"])
+    assert result.exit_code == 1
