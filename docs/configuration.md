@@ -40,9 +40,11 @@ saturation_fraction = 0.9
 | `equivalence_margin` | `0.05` | Largest score gap treated as practically negligible (for equivalence). |
 | `power_target` | `0.8` | Target power for the sample-size / minimum-detectable-effect advice. |
 | `smallest_meaningful_effect` | `0.2` | Cohen's d worth powering for when recommending more examples. |
+| `precision_margin` | `0.05` | Target confidence-interval half-width for a single-model score. |
 | `saturation_fraction` | `0.95` | Mean-over-ceiling above which a benchmark is "saturated". |
 | `min_spread` | `0.01` | Pooled score std below which the benchmark can't discriminate. |
-| `judge_agreement_threshold` | `0.8` | Inter-judge agreement required to pass. |
+| `judge_agreement_threshold` | `0.8` | Inter-judge agreement (and judge-vs-gold) required to pass. |
+| `reference_judge` | *(auto)* | Name of the human/gold judge to calibrate against (else auto-detected). |
 | `n_resamples` | `10000` | Bootstrap / permutation resamples. |
 | `seed` | `0` | RNG seed (reproducibility). |
 

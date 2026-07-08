@@ -125,6 +125,12 @@ model; a file that already has several models should be audited on its own. Mode
 labels default to the models' own names, falling back to the file names if those
 collide, and can be overridden with `--model-a` and `--model-b`.
 
+If you only have **one** model and no second file to compare against, don't pass
+two files — just audit the single file. EvalTrust switches to auditing whether the
+score itself is trustworthy (a confidence interval on it), and `--threshold 0.8`
+tests whether the model clears a target. See
+[Score Reliability](checks.md#single-model-score-reliability).
+
 ## When a format isn't recognized
 
 Detection fails loudly rather than guessing. If EvalTrust can't recognize a file it

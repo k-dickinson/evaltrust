@@ -6,12 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-08
+
 ### Added
 
 - **Single-model auditing.** Point EvalTrust at one model's scores (no comparison)
   and it reports whether you can trust the number: a confidence interval on the
   score (precision), and — with `--threshold` — whether the model really clears a
   target. A single-model file now audits instead of erroring.
+
+### Changed
+
+- README and docs refreshed to cover the full feature set (single-model,
+  multi-metric, judge calibration, config, regression `diff`, integrations).
 
 ## [0.4.0] — 2026-07-08
 
@@ -107,7 +114,8 @@ Initial release.
 - `--strict` flag to fail CI on a Low-Confidence verdict.
 - Deterministic, seeded resampling so audits are reproducible.
 
-[Unreleased]: https://github.com/k-dickinson/evaltrust/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/k-dickinson/evaltrust/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/k-dickinson/evaltrust/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/k-dickinson/evaltrust/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/k-dickinson/evaltrust/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/k-dickinson/evaltrust/compare/v0.1.0...v0.2.0

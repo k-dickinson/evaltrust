@@ -78,6 +78,27 @@ Two runs at 71% and 74% — a three-point "win" that is actually noise. EvalTrus
 catches it before it becomes a shipping decision. (Add `--explain` for the exact
 p-values and reasoning behind each line.)
 
+## What EvalTrust can do
+
+One tool, whether you're comparing models, sanity-checking a single eval, or
+gating CI:
+
+- **Compare two models** — is B really better than A, or is that gap just noise?
+  Significance, effect size, equivalence ("they're actually the same"), and
+  whether your sample was even big enough to tell.
+- **Audit a single model** — no comparison needed. It puts a confidence interval
+  on your score (is 84% really `[80%, 88%]` or `[71%, 97%]`?) and, given a target,
+  tests whether the model *actually* clears the bar.
+- **Audit a whole metric suite** — many metrics per example at once, with
+  multiple-comparison correction so testing ten metrics doesn't hand you a fake win.
+- **Vet the judge** — do multiple LLM judges agree, and does the AI judge match
+  human labels? The judge is where most eval trust quietly breaks.
+- **Vet the benchmark** — is it saturated, or too flat to separate anything?
+- **Catch regressions** — `evaltrust diff old.json new.json` flags where a metric
+  got worse since last release.
+- **Fit your workflow** — a CLI, a Python API, a pytest one-liner, a GitHub
+  Action, a `.evaltrust.toml` for team policy, and JSON output for everything else.
+
 ## Why the numbers are real, not our opinion
 
 Fair question for a tool that judges trust. Three things keep it honest:
@@ -129,6 +150,9 @@ pytest
 
    # Two single-model runs (e.g. two DeepEval runs), paired by example id:
    evaltrust audit gpt4_run.json claude_run.json
+
+   # Just one model? Audit whether you can trust its score, vs a target:
+   evaltrust audit my_model.json --threshold 0.8
    ```
 
 3. Read the verdict. Fix what it flags. Re-run.
@@ -148,11 +172,15 @@ Useful flags:
 |------|--------|
 | `--json` | Emit the full audit as JSON, for CI logic and experiment trackers. |
 | `--plain` | Plain ASCII output — safe for Windows terminals, CI logs, and piping to a file. |
-| `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) — gate CI. |
 | `--explain` | Show why each flag matters and the numbers behind it. |
+| `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) — gate CI. |
+| `--threshold` | For a single-model eval, the target score to test against (e.g. `0.8`). |
+| `--reference-judge` | Name the human/gold judge to calibrate the AI judges against. |
+| `--config` | Path to a config TOML (defaults to `.evaltrust.toml` / `pyproject`). |
 | `--model-a`, `--model-b` | Choose which two models to compare, or label the two files. |
-| `--alpha` | Significance level (default `0.05`). |
-| `--seed` | Seed for the resampling (results are deterministic; change only to stress-test). |
+| `--alpha`, `--equivalence-margin`, `--seed` | Statistical knobs (all also settable in config). |
+
+Two saved audits can be compared for regressions with `evaltrust diff old.json new.json`.
 
 ## Use it standalone, or embed it in your eval
 
@@ -198,16 +226,16 @@ More patterns in [`docs/integrations.md`](docs/integrations.md).
 
 ## What it checks
 
-EvalTrust audits four pillars of trust and ends in one plain-language verdict —
+EvalTrust audits several pillars of trust and ends in one plain-language verdict —
 **High**, **Moderate**, or **Low Confidence**. There is no arbitrary aggregate
 score.
 
 | Pillar | The question it answers |
 |--------|-------------------------|
-| **Statistical Validity** | Is the difference a real improvement, no real difference, or just too little data to tell? Significance (McNemar for pass/fail, paired permutation for continuous), equivalence testing, an interpretable effect size, and the minimum detectable effect. |
+| **Statistical Validity** | Is the difference a real improvement, no real difference, or just too little data to tell? Significance (McNemar for pass/fail, paired permutation for continuous), equivalence testing, an interpretable effect size, and the minimum detectable effect. *(For a single model: a confidence interval on the score, and an optional target test.)* |
 | **Benchmark Health** | Can the benchmark even separate these models, or is it saturated / flat? |
 | **Repeatability** | If you reran the evaluation, would the winner stay the winner? Uses repeated-run data when the file contains it. |
-| **Judge Reliability** | Would a different judge reach the same verdict? Uses multi-judge data when the file contains it. |
+| **Judge Reliability** | Would a different judge reach the same verdict — and does the AI judge match human labels? Uses multi-judge and human/gold data when the file contains it. |
 
 Every finding follows the same rule — **why it matters**, **how we detected it**,
 and **how to fix it**. Checks that need extra data (repeated runs, multiple
@@ -256,12 +284,12 @@ resampling is seeded, so the auditor is itself reproducible. See
 
 ## Roadmap
 
-- **Now:** offline CLI **and Python API**, four pillars, terminal / JSON / plain
-  output, equivalence testing, **multi-metric suites** (with multiple-comparison
-  correction), adapters for Promptfoo, DeepEval, JSON, and CSV.
-- **Next:** native adapters for hosted platforms (LangSmith, Braintrust, ...), an
-  optional HTML report, and historical/regression tracking across runs.
-- **Later:** opt-in orchestration for the pillars that need to generate evidence
+- **Now:** CLI **and Python API**; two-model, single-model, and multi-metric
+  audits; judge reliability + calibration; regression `diff`; config files; a CI
+  gate and GitHub Action; adapters for Promptfoo, DeepEval, JSON, and CSV.
+- **Next:** native adapters for hosted platforms (LangSmith, Braintrust, …), an
+  optional HTML report, and richer history/trend tracking.
+- **Later:** opt-in orchestration for the pillars that need to *generate* evidence
   (robustness perturbations, extra judges) and a provenance/reproducibility check.
 
 ## Contributing

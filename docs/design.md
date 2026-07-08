@@ -41,14 +41,15 @@ Every feature answers exactly one question:
 
 A trustworthy evaluation is repeatable, statistically sound, robust, and
 consistent across evaluators, on a healthy benchmark. EvalTrust's checks map onto
-these pillars. The first release audits four of them from the data already in your
-results file:
+these pillars, computed from the data already in your results file:
 
 - **Statistical Validity** — is the gap real, large enough to matter, and was the
-  sample big enough to detect it?
+  sample big enough to detect it? (For a single model: is the score itself precise
+  enough to trust?)
 - **Benchmark Health** — can the benchmark separate these models at all?
 - **Repeatability** — would a rerun reach the same conclusion?
-- **Judge Reliability** — would a different judge reach the same verdict?
+- **Judge Reliability** — would a different judge reach the same verdict, and does
+  the AI judge agree with human labels?
 
 Two further pillars — robustness to perturbation, and reproducibility provenance —
 require generating new evidence (re-running the eval, calling additional judges)
@@ -75,16 +76,20 @@ against an independent reference implementation, and all resampling is seeded, s
 the audit is reproducible. A tool that demands reproducibility has to be
 reproducible itself.
 
-## Scope of the first release
+## Scope
 
-Deliberately small and correct rather than broad and shaky:
+Deliberately offline and correct rather than broad and shaky. Today EvalTrust:
 
-- Offline command-line tool, no API keys, no configuration.
-- Reads Promptfoo, nested JSON, record lists, and CSV; pairs two single-model
-  files for tools like DeepEval.
-- The four pillars above, computed from the results file.
-- Terminal report.
+- Runs fully offline — no API keys, no network, no account.
+- Reads Promptfoo, DeepEval, nested JSON, record lists, and CSV; pairs two
+  single-model files, and audits a single model on its own.
+- Compares two models, audits one model's score reliability, and audits
+  multi-metric suites (with multiple-comparison correction).
+- Covers the pillars above, plus judge calibration against human/gold labels.
+- Runs as a CLI or a Python API, embeds in tests, gates CI, and compares two runs
+  for regressions. Output as a terminal report, plain ASCII, or JSON.
 
-Out of scope for now: HTML reports, a Python API, framework plugins, dashboards,
-and any feature that calls models or orchestrates new evaluation runs. Each is a
-later step with its own design.
+Still out of scope, by design: anything that **calls models or orchestrates new
+evaluation runs** — re-running the eval, adding judges, perturbing prompts. Those
+generate *new* evidence rather than auditing what's already in the file, and would
+break the offline, one-minute promise. They are a deliberate later step.

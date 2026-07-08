@@ -41,10 +41,12 @@ your eval output
 | `core/pairing.py` | Pair two single-model files into one A-vs-B comparison. |
 | `adapters/` | Detect a format (Promptfoo, DeepEval, nested JSON, records, CSV) and map it into the canonical model. |
 | `stats/` | Pure statistical primitives (resampling, effect size, power, McNemar, agreement). No knowledge of findings or formatting. |
-| `audit/` | The checks, the verdict rules, and the runner that orchestrates them. |
+| `audit/` | The checks and the runner. Comparison (`statistical`), single-model (`single`), suites (`suite`), `benchmark_health`, `repeatability`, `judge_reliability`, `judge_calibration`, and the `verdict` rules. |
+| `config.py` | `AuditConfig` — every threshold in one place, loadable from `.evaltrust.toml`. |
+| `diff.py` | Compare two saved audits to flag regressions. |
 | `report/terminal.py` | Render a report to the terminal (`rich`) or as plain ASCII. |
-| `api.py` | The public `evaltrust.audit(...)` entry point. |
-| `cli.py` | The `evaltrust audit` command (terminal, `--json`, `--plain`). |
+| `api.py` | The public `evaltrust.audit(...)` / `audit_suite(...)` entry points. |
+| `cli.py` | The `evaltrust audit` and `evaltrust diff` commands (`--json`, `--plain`, `--explain`). |
 
 ## Design principles
 

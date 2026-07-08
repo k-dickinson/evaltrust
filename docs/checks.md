@@ -1,6 +1,6 @@
 # Checks and methods
 
-EvalTrust groups its checks into four pillars. Each check returns a finding with a
+EvalTrust groups its checks into a handful of pillars. Each check returns a finding with a
 status — **PASS**, **WARN**, **FAIL**, or **SKIP** — and the reasoning behind it.
 This page documents the method and thresholds for each.
 
