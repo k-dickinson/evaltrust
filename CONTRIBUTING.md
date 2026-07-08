@@ -6,6 +6,9 @@ that sharpen that are very welcome. The two highest-value areas are **new format
 adapters** (so EvalTrust reads more tools out of the box) and **new audit checks**
 (so it catches more ways an evaluation can mislead).
 
+New to the project? Start with a
+[**good first issue**](https://github.com/k-dickinson/evaltrust/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
 ## Development setup
 
 EvalTrust targets Python 3.10+.

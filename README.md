@@ -295,8 +295,10 @@ Where it's headed (individual tasks are tracked in
 ## Contributing
 
 Contributions are welcome — new format adapters and additional checks especially.
-Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). All participants are expected to follow the
-[Code of Conduct](CODE_OF_CONDUCT.md). Report security issues per the
+New here? Browse the
+[**good first issues**](https://github.com/k-dickinson/evaltrust/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22),
+then read [`CONTRIBUTING.md`](CONTRIBUTING.md). All participants are expected to
+follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues per the
 [security policy](SECURITY.md).
 
 ## License
