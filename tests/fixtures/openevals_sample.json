@@ -1,0 +1,5 @@
+[
+  {"key": "correctness", "score": 1.0, "comment": "The answer is correct.", "input": "What is 2+2?", "output": "4"},
+  {"key": "correctness", "score": 0.0, "comment": "The answer is wrong.", "input": "What is 3+3?", "output": "5"},
+  {"key": "correctness", "score": 1.0, "comment": "Correct.", "input": "Capital of France?", "output": "Paris"}
+]

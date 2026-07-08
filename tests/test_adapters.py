@@ -178,3 +178,52 @@ def test_detect_routes_deepeval():
 def test_detect_raises_helpful_error_on_unknown_shape():
     with pytest.raises(UnknownFormatError):
         detect_adapter({"totally": "unrecognised"})
+
+
+# ---------------------------------------------------------------------------
+# OpenEvals adapter
+# ---------------------------------------------------------------------------
+
+from evaltrust.adapters.openevals import OpenEvalsAdapter
+
+OPENEVALS_SAMPLE = [
+    {"key": "correctness", "score": 1.0, "comment": "Correct.", "input": "q1"},
+    {"key": "correctness", "score": 0.0, "comment": "Wrong.", "input": "q2"},
+    {"key": "correctness", "score": 1.0, "comment": "Correct.", "input": "q3"},
+]
+
+
+def test_openevals_detects():
+    assert OpenEvalsAdapter().detect(OPENEVALS_SAMPLE)
+
+
+def test_openevals_does_not_detect_promptfoo():
+    assert not OpenEvalsAdapter().detect({"results": {"results": [{"provider": "gpt"}]}})
+
+
+def test_openevals_does_not_detect_plain_list():
+    assert not OpenEvalsAdapter().detect([{"id": "q1", "model": "A", "score": 1}])
+
+
+def test_openevals_parses_scores():
+    data = OpenEvalsAdapter().parse(OPENEVALS_SAMPLE)
+    assert data.n_examples == 3
+    assert data.models == ["model"]
+    assert data.examples[0].scores["model"] == 1.0
+    assert data.examples[1].scores["model"] == 0.0
+
+
+def test_openevals_boolean_score():
+    raw = [
+        {"key": "pass", "score": True, "input": "q1"},
+        {"key": "pass", "score": False, "input": "q2"},
+    ]
+    data = OpenEvalsAdapter().parse(raw)
+    assert data.examples[0].scores["model"] == 1.0
+    assert data.examples[1].scores["model"] == 0.0
+
+
+def test_openevals_auto_detected_by_registry():
+    from evaltrust.adapters.registry import detect_adapter
+    adapter = detect_adapter(OPENEVALS_SAMPLE)
+    assert adapter.source_format == "openevals"

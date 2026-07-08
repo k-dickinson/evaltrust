@@ -12,6 +12,7 @@ from typing import Protocol
 from ..core.schema import EvalData
 from .deepeval import DeepEvalAdapter
 from .generic import GenericRecordsAdapter, NativeNestedAdapter
+from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
 
 
@@ -30,6 +31,7 @@ class UnknownFormatError(ValueError):
 REGISTRY: list[Adapter] = [
     PromptfooAdapter(),
     DeepEvalAdapter(),
+    OpenEvalsAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]
