@@ -20,6 +20,7 @@ from ..config import AuditConfig
 from ..core.schema import EvalData, Finding, Status
 from ..stats.resampling import bootstrap_ci
 from .benchmark_health import audit_benchmark_health
+from .repeatability import audit_single_repeatability
 
 PILLAR = "Score Reliability"
 
@@ -46,6 +47,7 @@ def audit_single(
     findings += audit_benchmark_health(
         data, [model], saturation_fraction=cfg.saturation_fraction,
         min_spread=cfg.min_spread)
+    findings += audit_single_repeatability(data, model)
     return findings
 
 

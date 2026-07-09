@@ -137,3 +137,85 @@ def _variance(gap_std, overall, model_a, model_b) -> Finding:
         details={"check": "measurement_variance", "gap_std": gap_std,
                  "mean_gap": overall, "snr": snr},
     )
+
+
+# --- single-model repeatability -------------------------------------------
+# With one model there is no gap to track, so the question becomes: does the
+# model's own score hold still across reruns? We measure the std of the per-run
+# mean score.
+
+def _skip_single(reason: str) -> Finding:
+    return Finding(
+        pillar=PILLAR,
+        title="Not assessed",
+        status=Status.SKIP,
+        why=(
+            "A score you can't reproduce isn't one you can trust. Without "
+            "repeated runs we cannot tell whether it is stable or a lucky draw."
+        ),
+        how_detected=reason,
+        how_to_fix="Run the model 3-5 times and include the per-run scores.",
+        details={"check": "single_repeatability", "assessed": False},
+    )
+
+
+def _run_means(data: EvalData, model: str) -> np.ndarray | None:
+    """Per-run mean score across examples, or None if there aren't >=2 aligned runs."""
+    runs = []
+    for ex in data.examples:
+        if not ex.runs or model not in ex.runs:
+            continue
+        runs.append(ex.runs[model])
+    if not runs:
+        return None
+
+    r = min(len(x) for x in runs)
+    if r < 2:
+        return None
+
+    mat = np.array([x[:r] for x in runs], dtype=float)  # examples x runs
+    return mat.mean(axis=0)                               # length r: mean per run
+
+
+def audit_single_repeatability(data: EvalData, model: str) -> list[Finding]:
+    if not data.has_runs:
+        return [_skip_single("The results file contains no repeated runs.")]
+
+    run_means = _run_means(data, model)
+    if run_means is None:
+        return [_skip_single("Fewer than two repeated runs are available.")]
+
+    r = run_means.size
+    mean_score = float(run_means.mean())
+    score_std = float(run_means.std(ddof=1))
+    return [_score_stability(score_std, mean_score, r, model)]
+
+
+def _score_stability(score_std, mean_score, r, model) -> Finding:
+    signal = abs(mean_score)
+    noisy = score_std >= signal and score_std > 0
+    snr = (signal / score_std) if score_std > 0 else float("inf")
+
+    return Finding(
+        pillar=PILLAR,
+        title=("Score swings across reruns" if noisy
+               else "Score is stable across reruns"),
+        status=Status.WARN if noisy else Status.PASS,
+        why=(
+            "A score that swings as much as its own size between runs is barely "
+            "distinguishable from noise. You can't ship on a number that won't "
+            "hold still."
+        ),
+        how_detected=(
+            f"Across {r} reruns {model} averaged {mean_score:.4f} with a "
+            f"run-to-run standard deviation of {score_std:.4f} "
+            f"(signal-to-noise {snr:.2f})."
+        ),
+        how_to_fix=(
+            "The score is stable relative to its run-to-run noise."
+            if not noisy else
+            "Average more runs to pin the score down before trusting it."
+        ),
+        details={"check": "single_repeatability", "score_std": score_std,
+                 "mean_score": mean_score, "runs": r, "snr": snr},
+    )

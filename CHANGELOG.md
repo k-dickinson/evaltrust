@@ -25,6 +25,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skewed data. The percentile interval stays the default everywhere; BCa is
   validated against `scipy.stats.bootstrap(method="BCa")` and falls back to the
   percentile interval (never a silent `NaN`) on degenerate samples.
+- **Single-model repeatability.** A single-model audit whose file has repeated
+  runs now reports how stable the score is across reruns (the standard deviation
+  of the per-run mean score), under the Repeatability pillar. It degrades to a
+  SKIP when the file has no repeated runs.
 
 ### Fixed
 

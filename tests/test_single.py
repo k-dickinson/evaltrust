@@ -5,6 +5,7 @@ how precise is it, does it clear a target, is the benchmark healthy.
 """
 
 import numpy as np
+import pytest
 
 from evaltrust.audit.single import audit_single
 from evaltrust.core.schema import EvalData, Example, Status
@@ -13,6 +14,16 @@ from evaltrust.core.schema import EvalData, Example, Status
 def data_for(scores, model="m"):
     examples = [Example(id=str(i), scores={model: float(s)})
                 for i, s in enumerate(scores)]
+    return EvalData(models=[model], examples=examples, source_format="test",
+                    metadata={})
+
+
+def data_with_runs(runs_by_example, model="m"):
+    examples = [
+        Example(id=str(i), scores={model: float(np.mean(runs))},
+                runs={model: [float(x) for x in runs]})
+        for i, runs in enumerate(runs_by_example)
+    ]
     return EvalData(models=[model], examples=examples, source_format="test",
                     metadata={})
 
@@ -77,6 +88,56 @@ def test_includes_benchmark_health():
 def test_every_finding_obeys_the_golden_rule():
     for f in audit_single(data_for([1] * 60 + [0] * 40), "m", threshold=0.5):
         assert f.why.strip() and f.how_detected.strip() and f.how_to_fix.strip()
+
+
+def test_single_repeatability_skips_without_runs():
+    findings = audit_single(data_for([1] * 60 + [0] * 40), "m")
+    rep = by_check(findings, "single_repeatability")
+    assert rep.status is Status.SKIP
+    assert rep.pillar == "Repeatability"
+    assert rep.details["assessed"] is False
+
+
+def test_single_repeatability_passes_for_stable_reruns():
+    # 17 examples pass on every run, 3 fail on every run: each run averages 0.85
+    # with zero run-to-run spread.
+    runs = [[1, 1, 1]] * 17 + [[0, 0, 0]] * 3
+    rep = by_check(audit_single(data_with_runs(runs), "m"), "single_repeatability")
+    assert rep.status is Status.PASS
+    assert rep.pillar == "Repeatability"
+    # PASS means the run-to-run std does not swamp the score.
+    assert rep.details["score_std"] < abs(rep.details["mean_score"])
+
+
+def test_single_repeatability_warns_when_std_swamps_the_score():
+    # Every example passes only on the first of three runs: the per-run means are
+    # [1.0, 0.0, 0.0], a score of 0.333 with a run-to-run std of 0.577 that
+    # swamps it.
+    runs = [[1, 0, 0]] * 20
+    rep = by_check(audit_single(data_with_runs(runs), "m"), "single_repeatability")
+    assert rep.status is Status.WARN
+    # WARN is triggered by std >= |mean score| -- assert the rule directly.
+    assert rep.details["score_std"] >= abs(rep.details["mean_score"])
+
+
+def test_single_repeatability_reports_std_of_the_run_means():
+    runs = [[1, 0, 0]] * 20
+    rep = by_check(audit_single(data_with_runs(runs), "m"), "single_repeatability")
+    # Independent reference: per-run means are [1, 0, 0]. Compute the sample std
+    # from the definition (not numpy's std) so the test validates the formula.
+    run_means = [1.0, 0.0, 0.0]
+    mean = sum(run_means) / len(run_means)
+    variance = sum((x - mean) ** 2 for x in run_means) / (len(run_means) - 1)
+    assert rep.details["score_std"] == pytest.approx(variance ** 0.5)
+    assert rep.details["mean_score"] == pytest.approx(1.0 / 3.0)
+    assert rep.details["runs"] == 3
+
+
+def test_single_repeatability_skips_with_fewer_than_two_runs():
+    # Only one run per example -> not enough to measure run-to-run stability.
+    findings = audit_single(data_with_runs([[1], [0], [1]]), "m")
+    rep = by_check(findings, "single_repeatability")
+    assert rep.status is Status.SKIP
 
 
 def test_run_audit_dispatches_single_model():
