@@ -260,7 +260,7 @@ def _holm_step_thresholds(pvalues, rejected, alpha: float) -> list[float]:
     thresholds = []
     for i in range(k):
         if rejected[i]:
-            thresholds.append(alpha / (k - rank[i]))
+            thresholds.append(float(alpha / (k - rank[i])))
         else:
-            thresholds.append(alpha / (k - n_rejected))
+            thresholds.append(float(alpha / (k - n_rejected)))
     return thresholds

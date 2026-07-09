@@ -136,8 +136,17 @@ def _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
     if outcome == "significant":
         title = f"{leader} is significantly better than {trailer}"
         status = Status.PASS
+        # A multiplicity procedure that owns the decision (Holm) can reject on the
+        # boundary p == alpha (it rejects via adjusted_p <= alpha), so the operator
+        # must reflect reality rather than assume `p < alpha`. Every real path keeps
+        # p <= alpha on this branch (Holm-rejected metrics satisfy p <= their step
+        # threshold; the other corrections enter here only under strict p < alpha),
+        # so `>` never fires through audit_suite/run_audit -- but the `significant`
+        # override is public, so a caller forcing significance on p > alpha must
+        # still get a true string, never a false `<=`.
+        op = "<" if p < alpha else ("<=" if p == alpha else ">")
         how = (f"{cap} over {test_detail} gave p = {p:.4f} "
-               f"(< alpha {alpha}); the {conf_pct}% interval for the gap is {ci}.")
+               f"({op} alpha {alpha}); the {conf_pct}% interval for the gap is {ci}.")
         fix = "It's a real improvement. Safe to act on."
     elif outcome == "equivalent":
         title = f"{leader} and {trailer} are statistically equivalent"

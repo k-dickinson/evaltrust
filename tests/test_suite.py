@@ -127,6 +127,43 @@ def test_holm_reruns_each_metric_at_its_effective_alpha():
     assert holm.metric_alphas["borderline"] == pytest.approx(0.05 / 1)
 
 
+def test_metric_alphas_are_plain_floats_on_every_path():
+    # metric_alphas must be plain builtin `float` on BOTH the Holm path (step
+    # thresholds) and the Bonferroni/none paths, so the mapping never mixes numpy
+    # and builtin scalars. np.float64 subclasses float and serializes fine, but the
+    # type must stay uniform; `type(a) is float` rejects np.float64.
+    suite = {"strong": _strong(), "borderline": _borderline()}
+    for correction in ("holm", "bonferroni", "none"):
+        rep = audit_suite(suite, alpha=0.05, correction=correction, seed=0)
+        for m, a in rep.metric_alphas.items():
+            assert type(a) is float, (correction, m, type(a))
+    one = audit_suite({"only": _borderline()}, alpha=0.05, seed=0)   # single-metric path
+    assert type(one.metric_alphas["only"]) is float
+
+
+def test_holm_boundary_metric_prose_is_accurate_at_p_equals_step_threshold():
+    # The amendment's repro: a two-metric Holm suite whose top metric's permutation
+    # p lands EXACTLY on its step threshold (p = 1/40 = 0.025 = 0.05 / 2). Holm
+    # rejects it (adjusted_p <= alpha), so its decision is significant with
+    # p == alpha; the prose must read `<= alpha`, never the false `< alpha`.
+    def const(gap):
+        ex = [Example(id=f"e{i}", scores={"A": 0.5, "B": 0.5 + gap})
+              for i in range(12)]
+        return EvalData(models=["A", "B"], examples=ex, source_format="test",
+                        metadata={})
+
+    cfg = AuditConfig(alpha=0.05, n_resamples=39)
+    rep = audit_suite({"m1": const(0.30), "m2": const(0.0)}, "A", "B",
+                      config=cfg, correction="holm")
+    (dec,) = [f for f in rep.reports["m1"].findings
+              if f.details.get("check") == "decision"]
+    assert dec.details["outcome"] == "significant"
+    assert dec.details["p_value"] == 0.025
+    assert dec.details["p_value"] == rep.metric_alphas["m1"]     # p == alpha exactly
+    assert "(< alpha" not in dec.how_detected
+    assert "(<= alpha 0.025)" in dec.how_detected
+
+
 def test_holm_keeps_corrected_alpha_scalar_and_names_itself():
     suite = {f"m{i}": _borderline() for i in range(5)}
     holm = audit_suite(suite, alpha=0.05, correction="holm", seed=0)

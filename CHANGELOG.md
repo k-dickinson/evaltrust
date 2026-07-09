@@ -49,7 +49,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Holm-Bonferroni now carries its rejection decision** into each metric's audit
   instead of reconstructing an effective alpha to re-derive it under a strict
   `p < alpha`; the reported per-metric `alpha` is the exact Holm step threshold,
-  with no ULP nudge on the exact-tie boundary. Verdicts are unchanged.
+  with no ULP nudge on the exact-tie boundary. Verdicts are unchanged. On that
+  boundary a metric can now be reported significant with `p == alpha` exactly
+  (Holm rejects via `adjusted_p <= alpha`), so the significant decision prose picks
+  its operator to match reality — `<`, `<=`, or `>` — instead of the previously
+  hard-coded (and, without the ULP nudge, now false at the boundary) `p < alpha`.
+  Every other correction path still reads `<` and its prose is byte-for-byte
+  unchanged. The per-metric `alpha` in `SuiteReport.metric_alphas` is a plain
+  `float` on both the Holm and Bonferroni paths.
 
 ## [0.5.0] — 2026-07-08
 
