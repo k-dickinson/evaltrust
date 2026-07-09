@@ -1,10 +1,7 @@
-"""Pair two single-system evaluation files into one A-vs-B comparison.
+"""Pair two single-model evaluation files into one A-vs-B comparison.
 
-Single-system tools (DeepEval, LangSmith, OpenEvals) evaluate one model per run,
-so their exports contain a single model. Point EvalTrust at two such files and it
-pairs them by example id into the canonical two-model shape the auditor expects.
-A file that already contains several models is audited directly instead — this
-path is only for the one-model-per-file case.
+Single-system tools (DeepEval, LangSmith, OpenEvals) export one model per run;
+this pairs two such files by example id. Multi-model files are audited directly.
 """
 
 from __future__ import annotations
@@ -19,7 +16,7 @@ def primary_model(data: EvalData) -> str:
             f"Expected one model per file for a two-file comparison, but "
             f"'{data.source_format}' contained {len(data.models)} "
             f"({', '.join(map(str, data.models))}). Audit this file on its own "
-            f"instead — it already has models to compare."
+            f"instead; it already has models to compare."
         )
     return data.models[0]
 

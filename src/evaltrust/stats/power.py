@@ -1,12 +1,7 @@
 """Power analysis for a paired (one-sample-on-differences) t-test.
 
-This is what turns "the difference wasn't significant" into an actionable
-recommendation. Either the effect is genuinely absent, or the sample was too
-small to see it — power analysis distinguishes the two and tells the user how
-many more examples would be needed.
-
-Uses the exact noncentral-t formulation (matching statsmodels), not a normal
-approximation.
+Distinguishes "no effect" from "too small a sample to see it". Uses the exact
+noncentral-t formulation (matching statsmodels).
 """
 
 from __future__ import annotations
@@ -19,8 +14,7 @@ from scipy import stats as _sp
 def achieved_power(effect_size: float, n: int, alpha: float = 0.05) -> float:
     """Power of a two-sided paired t-test to detect ``effect_size`` at ``n`` pairs.
 
-    Power is the probability of correctly rejecting the null when an effect of
-    this size truly exists. ``effect_size`` is Cohen's d (sign-agnostic).
+    ``effect_size`` is Cohen's d (sign-agnostic).
     """
     if n < 2:
         return 0.0
@@ -74,10 +68,8 @@ def minimum_detectable_effect(
 ) -> float:
     """Smallest true effect size (Cohen's d) detectable at ``power`` given ``n``.
 
-    This is *prospective* — a property of the sample size, not of the observed
-    result — so it avoids the circularity of post-hoc (observed-effect) power.
-    It answers "how small a real difference could this evaluation have reliably
-    caught?" Power is monotone in the effect size, so we bisect on d.
+    Prospective (a property of the sample size), avoiding post-hoc power's
+    circularity. Bisects on d.
     """
     if n < 2:
         return float("inf")

@@ -32,13 +32,8 @@ def audit(
 ) -> AuditReport:
     """Audit an evaluation and return an :class:`AuditReport`.
 
-    ``source`` may be:
-      - a path to a results file (JSON or CSV),
-      - a list/tuple of two paths to single-model files, paired by example id,
-      - an :class:`EvalData` you built yourself.
-
-    ``model_a`` / ``model_b`` choose which two models to compare (or, for the
-    two-file form, label the two files).
+    ``source`` is a results file (JSON/JSONL/CSV), two single-model files to pair,
+    or an :class:`EvalData`. ``model_a`` / ``model_b`` pick or label the two models.
     """
     kw = dict(alpha=alpha, equivalence_margin=equivalence_margin,
               threshold=threshold, seed=seed)
@@ -70,14 +65,8 @@ def audit_suite(
 ) -> SuiteReport:
     """Audit a multi-metric suite and return a :class:`SuiteReport`.
 
-    ``source`` is a path to a file with a ``metric`` column, or a ready-made
-    ``{metric: EvalData}`` mapping. Every metric is audited for the same model
-    pair, with the significance threshold corrected for the number of metrics.
-
-    ``correction`` chooses the multiple-comparison correction over
-    ``{"bonferroni", "holm", "none"}`` (default ``"bonferroni"``). Holm is a
-    step-down refinement that rejects at least as many metrics as Bonferroni at
-    the same family-wise error rate.
+    ``source`` is a file with a ``metric`` column or a ``{metric: EvalData}`` map.
+    ``correction`` is ``{"bonferroni", "holm", "none"}``.
     """
     suite = load_suite(source) if isinstance(source, str) else source
     return _audit_suite(suite, model_a=model_a, model_b=model_b, alpha=alpha,

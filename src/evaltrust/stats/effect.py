@@ -1,9 +1,8 @@
 """Effect size for a paired comparison.
 
-A p-value tells you whether a difference is real; an effect size tells you
-whether it is *big enough to care about*. A tiny, perfectly-measured difference
-can be statistically significant yet practically meaningless — EvalTrust reports
-both so nobody ships on significance alone.
+A p-value says whether a difference is real; an effect size says whether it is
+big enough to care about. EvalTrust reports both so nobody ships on significance
+alone.
 """
 
 from __future__ import annotations
@@ -14,9 +13,8 @@ import numpy as np
 def cohens_d_paired(differences: np.ndarray) -> float:
     """Cohen's d for paired differences: mean(diff) / sd(diff).
 
-    - No difference at all -> 0.0 (no effect).
-    - A consistent nonzero difference with zero spread -> +/-inf (an infinitely
-      reliable effect; the sign is preserved).
+    Zero difference gives 0.0; a consistent nonzero difference with zero spread
+    gives +/-inf (sign preserved).
     """
     diffs = np.asarray(differences, dtype=float)
     if diffs.size == 0:
@@ -36,9 +34,8 @@ def cohens_h(p1: float, p2: float) -> float:
     """Cohen's h effect size between two proportions.
 
     The right effect size for pass-rate / accuracy comparisons, where Cohen's d
-    (which assumes roughly continuous data) is not appropriate. Uses the
-    arcsine-square-root transform; the sign follows the argument order (positive
-    when ``p1 > p2``).
+    (which assumes continuous data) does not fit. Uses the arcsine-square-root
+    transform; positive when ``p1 > p2``.
     """
     phi1 = 2.0 * np.arcsin(np.sqrt(p1))
     phi2 = 2.0 * np.arcsin(np.sqrt(p2))

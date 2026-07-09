@@ -1,8 +1,7 @@
 """Inter-rater agreement metrics for judge reliability.
 
-Percent agreement is intuitive but doesn't correct for agreement that would
-happen by chance; kappa does. EvalTrust reports both so a "judges agree 90%" claim
-can be checked against how easy that agreement was to get by luck.
+Percent agreement is intuitive but doesn't correct for chance agreement; kappa
+does. EvalTrust reports both.
 """
 
 from __future__ import annotations

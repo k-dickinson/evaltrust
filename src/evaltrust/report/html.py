@@ -1,7 +1,7 @@
 """Render an audit report as a standalone HTML page.
 
-No external dependencies — CSS is inlined so the file is self-contained
-and can be opened directly in a browser or attached to a CI artefact.
+No external dependencies: CSS is inlined so the file is self-contained and can be
+opened in a browser or attached to a CI artefact.
 """
 
 from __future__ import annotations

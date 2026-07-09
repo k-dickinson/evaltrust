@@ -1,7 +1,7 @@
 # Checks and methods
 
 EvalTrust groups its checks into a handful of pillars. Each check returns a finding with a
-status — **PASS**, **WARN**, **FAIL**, or **SKIP** — and the reasoning behind it.
+status - **PASS**, **WARN**, **FAIL**, or **SKIP** - and the reasoning behind it.
 This page documents the method and thresholds for each.
 
 All comparisons are **paired**: the same examples are scored by both models, so
@@ -13,27 +13,27 @@ averages.
 The core question: is the reported gap real evidence you can act on? Three
 findings.
 
-### Decision — significant, equivalent, or inconclusive
+### Decision - significant, equivalent, or inconclusive
 
 This deliberately avoids the trap of treating "not significant" as a failure
 (that would confuse *absence of evidence* with *evidence of absence*). It returns
 one of three honest outcomes:
 
-- **Significant** (**PASS**) — the leader really is ahead. Detected with
+- **Significant** (**PASS**) - the leader really is ahead. Detected with
   **McNemar's exact test** for paired pass/fail data, or a **paired permutation
   test** (sign-flip, two-sided, `(count + 1) / (N + 1)` correction, no normality
   assumption) for continuous scores. Triggered when `p < alpha` (default `0.05`).
-- **Equivalent** (**WARN**) — a genuine conclusion that the models are the *same*
+- **Equivalent** (**WARN**) - a genuine conclusion that the models are the *same*
   within a margin you set. Established by a two-one-sided-tests (TOST) style check:
   the `(1 − 2·alpha)` bootstrap interval for the gap lies entirely within
   ±`equivalence_margin`. This is what lets you answer "is my cheaper model as good
   as the expensive one?".
-- **Inconclusive** (**FAIL**) — not significant *and* not equivalent: there simply
+- **Inconclusive** (**FAIL**) - not significant *and* not equivalent: there simply
   isn't enough evidence to decide. The fix is more data, not a different claim.
 
 A bootstrap confidence interval for the gap is reported alongside all three.
 
-### Effect size — how big, in interpretable terms
+### Effect size - how big, in interpretable terms
 
 - Continuous scores: **Cohen's *d*** on the paired differences, with a magnitude
   label (negligible `< 0.2`, small `< 0.5`, medium `< 0.8`, large `≥ 0.8`).
@@ -41,17 +41,17 @@ A bootstrap confidence interval for the gap is reported alongside all three.
   *h***, the effect size appropriate for proportions (Cohen's *d* assumes roughly
   continuous data and is not used for 0/1 outcomes).
 
-**PASS** when the effect is medium or large; **WARN** when small or negligible —
+**PASS** when the effect is medium or large; **WARN** when small or negligible -
 because a real gap can still be too small to matter in production.
 
-### Precision — minimum detectable effect (not post-hoc power)
+### Precision - minimum detectable effect (not post-hoc power)
 
 Rather than the widely-criticised *observed-effect* (post-hoc) power, EvalTrust
 reports the **minimum detectable effect**: the smallest true effect this sample
 size could reliably detect at 80% power, computed from the exact noncentral-*t*
 distribution. This is a property of the design, not of the observed result.
 
-- **PASS** when the comparison reached a conclusion (significant or equivalent) —
+- **PASS** when the comparison reached a conclusion (significant or equivalent) -
   the sample was adequate.
 - **WARN** when inconclusive, with a prospective recommendation for how many
   examples would be needed to detect even a small effect.
@@ -119,7 +119,7 @@ categorical, and the identity of the judge that agrees least with the rest.
 
 ### Judge calibration (vs. a human/gold judge)
 
-If the file includes a human or gold judge — treated as ground truth — EvalTrust
+If the file includes a human or gold judge - treated as ground truth - EvalTrust
 measures how often each AI judge agrees with it. A judge that matches humans only
 70% of the time can't be trusted to rank models on its own. Include your human
 labels as a judge named `gold`/`human`/`reference` (etc.), or name the reference
@@ -130,7 +130,7 @@ with `--reference-judge`.
 
 ## Single model (Score Reliability)
 
-If your file has only one model — you evaluated one system, not a comparison —
+If your file has only one model - you evaluated one system, not a comparison -
 EvalTrust switches from "is B better than A?" to "can I trust this score?":
 
 - **Precision.** A bootstrap confidence interval on the mean turns "84%" into
@@ -152,7 +152,7 @@ If your file scores several metrics per example (a `metric` column, see
 everything above, comparing the same two models throughout, and rolls the results
 into one suite report.
 
-Testing many metrics at once inflates false positives — run 20 metrics at
+Testing many metrics at once inflates false positives - run 20 metrics at
 `alpha = 0.05` and one will look "significant" by luck. EvalTrust corrects for this
 with **Bonferroni**: it divides the significance threshold by the number of
 metrics, so a metric is only called a real improvement if it clears the stricter
@@ -162,10 +162,10 @@ bar. The suite's overall confidence is the **weakest** of its metrics.
 
 The overall verdict follows simple, documented rules rather than a weighted score:
 
-- **Low Confidence** — any check FAILs (a load-bearing part of the conclusion is
+- **Low Confidence** - any check FAILs (a load-bearing part of the conclusion is
   unsupported).
-- **Moderate Confidence** — no failures, but at least one WARN.
-- **High Confidence** — every applicable check passes.
+- **Moderate Confidence** - no failures, but at least one WARN.
+- **High Confidence** - every applicable check passes.
 
 SKIP findings never raise confidence; they represent evidence you don't yet have.
 

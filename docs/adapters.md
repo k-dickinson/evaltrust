@@ -48,7 +48,7 @@ class MyToolAdapter:
 
 Use `coerce_score()` to normalize the many ways scores are written (numbers,
 booleans, `pass`/`fail`, and so on). If a field can't be interpreted as a score,
-let it raise — silently guessing would undermine the point of an auditor.
+let it raise - silently guessing would undermine the point of an auditor.
 
 For formats where the fields aren't in fixed positions, reuse `dicts_to_records()`
 from `adapters/generic.py`, which matches column names against the shared alias
@@ -87,7 +87,7 @@ def test_mytool_detects_and_parses():
 ```
 
 The most valuable fixture is one derived from a genuine export of the tool. If you
-have a real sample file, base the test on it — that is how we make sure the
+have a real sample file, base the test on it - that is how we make sure the
 adapter matches reality and not an assumption.
 
 ## Single-model tools

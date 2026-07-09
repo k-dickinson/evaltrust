@@ -1,8 +1,6 @@
 """Compare two audits (JSON from ``--json``) to catch regressions between runs.
 
-The value of an auditor compounds over time: the question isn't only "is this run
-trustworthy?" but "did it get *worse* than last release?". This compares two saved
-audits and flags where confidence dropped or a real win was lost.
+Flags where confidence dropped or a real win was lost since the last run.
 """
 
 from __future__ import annotations

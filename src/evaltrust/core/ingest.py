@@ -1,8 +1,8 @@
 """Load an evaluation file from disk and normalise it to canonical EvalData.
 
-The user runs ``evaltrust audit results.json`` (or ``.csv``) and never thinks about
-formats. This module reads the file, routes JSON through structural auto-detection
-and CSV through the shared record extractor, and returns EvalData.
+Reads the file, routes JSON through structural auto-detection and CSV through the
+shared record extractor, and returns EvalData. The user never thinks about
+formats.
 """
 
 from __future__ import annotations
@@ -42,10 +42,8 @@ def _load_json(text: str) -> EvalData:
 def _is_json_array_document(text: str) -> bool:
     """True when the file is a single JSON array rather than line-delimited rows.
 
-    A genuine ``.jsonl`` record is one JSON object per line, so it starts with
-    ``{``. A file that starts with ``[`` is a JSON array mis-named ``.jsonl`` (a
-    whole JSON document, possibly pretty-printed across lines); we route it back
-    through JSON detection instead of trying to read ``[`` as a record.
+    A ``.jsonl`` record starts with ``{``. A file starting with ``[`` is a JSON
+    array mis-named ``.jsonl``, so we route it back through JSON detection.
     """
     return text.lstrip().startswith("[")
 
@@ -53,15 +51,9 @@ def _is_json_array_document(text: str) -> bool:
 def _parse_jsonl_dicts(text: str, name: str) -> list[dict]:
     """Parse line-delimited JSON into a list of record dicts.
 
-    Blank lines (including a trailing newline) are ignored. Line endings are
-    normalised so LF, CRLF, and legacy CR files all split correctly, but we split
-    only on ``\\r``/``\\n`` — never ``str.splitlines()`` — and both are control
-    characters JSON must escape inside a string, so a record can't be torn in two
-    by a separator sitting inside a value (a Unicode line separator U+2028/U+2029,
-    which ``str.splitlines()`` would break on, is left intact). A line that isn't
-    valid JSON, or that is JSON but not an object, raises a ``ValueError`` naming
-    the 1-based line number, matching the quality of the ``JSONDecodeError``
-    message ``_load_json`` produces for whole-file JSON.
+    Splits only on ``\\r``/``\\n`` (not ``str.splitlines()``) so a Unicode line
+    separator inside a value can't tear a record. A non-object line raises
+    ``ValueError`` naming the 1-based line number.
     """
     normalised = text.replace("\r\n", "\n").replace("\r", "\n")
     rows: list[dict] = []
@@ -98,13 +90,8 @@ def _load_jsonl(text: str, name: str) -> EvalData:
 def load(path: str) -> EvalData:
     """Read ``path`` and return canonical EvalData.
 
-    Routing is by extension, with a content fallback: a ``.json`` file goes
-    through JSON auto-detection, a ``.jsonl`` file through the line-delimited
-    reader, a ``.csv`` file through the CSV reader, and anything else is tried as
-    JSON, then JSONL, then CSV. JSONL sits before CSV in that chain on purpose:
-    a JSON-object line can never be mistaken for a CSV row (CSV cells aren't
-    ``{...}``), so adding it can't swallow a CSV; and JSON is still tried first,
-    so a single JSON document is unaffected.
+    Routes by extension (``.json`` / ``.jsonl`` / ``.csv``); anything else is
+    tried as JSON, then JSONL, then CSV.
     """
     p = Path(path)
     if not p.exists():
@@ -139,12 +126,8 @@ def load(path: str) -> EvalData:
 def load_suite(path: str) -> "OrderedDict[str, EvalData]":
     """Load a file as a metric -> dataset map.
 
-    A file with a ``metric`` column (long records, CSV, or ``.jsonl``) becomes a
-    multi-entry suite; everything else becomes a single entry keyed ``"score"``.
-    Callers audit a single dataset when there's one metric, or the whole suite
-    when there are several. ``.jsonl`` routes exactly like ``.json`` records here,
-    and the extensionless fallback tries JSONL before CSV for the same reason as
-    ``load()``.
+    A file with a ``metric`` column becomes a multi-entry suite; everything else
+    becomes a single entry keyed ``"score"``. Routing follows ``load()``.
     """
     p = Path(path)
     if not p.exists():

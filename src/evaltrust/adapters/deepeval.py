@@ -1,15 +1,8 @@
 """DeepEval adapter.
 
-DeepEval evaluates one system per run, so a single export contains one model —
-you compare two runs with ``evaltrust audit runA.json runB.json``. This adapter
-reads DeepEval's evaluation-result export (from ``evaluate(...)`` /
-``deepeval test run``), tolerating both the snake_case (``test_results`` /
-``metrics_data``) and camelCase (``testCases`` / ``metricsData``) shapes.
-
-Per test case the score is the case's ``success`` (pass/fail), falling back to
-the mean of its metric scores when ``success`` is absent. If the export records a
-model under ``hyperparameters``, that name is used; otherwise the model is left
-generic and the file name supplies the label when pairing two runs.
+Reads DeepEval's result export (one model per run), tolerating the snake_case and
+camelCase shapes. Per case the score is ``success``, falling back to the mean of
+its metric scores; the model name comes from ``hyperparameters`` if present.
 """
 
 from __future__ import annotations

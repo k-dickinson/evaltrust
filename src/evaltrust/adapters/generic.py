@@ -1,9 +1,8 @@
 """Generic JSON adapters: native nested output and flat record lists.
 
-These two cover the long tail — anything that isn't a recognised tool but is
-still, structurally, "examples with per-model scores." Between them and the CSV
-adapter, a user with scores in almost any shape can get an audit without
-reformatting anything.
+These cover the long tail: anything that isn't a recognised tool but is still,
+structurally, "examples with per-model scores." Between them and the CSV adapter,
+scores in almost any shape can be audited without reformatting.
 """
 
 from __future__ import annotations
@@ -51,13 +50,9 @@ def _find_record_list(raw) -> list | None:
 def dicts_to_records(rows: list[dict], skipped: list | None = None) -> list[Record]:
     """Extract (example, model, score) records from dict rows.
 
-    Handles both *long* format (a model column and a score column) and *wide*
-    format (one score column per model). Non-numeric columns in wide format are
-    ignored, so free-text fields like the prompt don't get mistaken for models.
-
-    Real files contain the occasional missing or unreadable score. Rather than
-    crash on one bad cell, such rows are skipped; if a ``skipped`` list is passed,
-    a short reason is appended for each so the audit can report the count.
+    Handles long format (model + score columns) and wide format (one score column
+    per model, non-numeric columns ignored). Rows with an unreadable score are
+    skipped, with a reason appended to ``skipped`` if given.
     """
     keys = rows[0].keys()
     id_key = _first_alias(keys, ID_KEYS)

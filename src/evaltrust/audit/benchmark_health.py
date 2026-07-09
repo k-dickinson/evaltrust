@@ -1,12 +1,8 @@
 """Benchmark Health audit.
 
-Even a flawless comparison is worthless on a broken benchmark. Two failure modes
-matter most in practice:
-
-  - Saturation: everyone already scores near the ceiling, so there is no room
-    left to demonstrate an improvement.
-  - No discrimination: the benchmark gives essentially the same score to
-    everything, so it cannot separate any two models regardless of the stats.
+A comparison is worthless on a broken benchmark. Flags saturation (everyone near
+the ceiling, no room to improve) and no discrimination (near-identical scores,
+can't separate models).
 """
 
 from __future__ import annotations

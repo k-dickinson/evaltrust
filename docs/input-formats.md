@@ -1,7 +1,7 @@
 # Input formats
 
 You never write an EvalTrust-specific format. Point the tool at whatever your eval
-framework produced and it detects the shape by structure — not by file name — and
+framework produced and it detects the shape by structure - not by file name - and
 maps it into one internal representation.
 
 ```bash
@@ -39,7 +39,7 @@ Inspect writes one `EvalLog` per run as a single JSON document. EvalTrust reads
 the `.json` log format directly: the model comes from `eval.model`, each entry in
 `samples` becomes an example, and the scorer's grade under `sample.scores` becomes
 the score. Inspect's grade constants map the way Inspect's own `value_to_float`
-maps them — `C`/`I`/`P`/`N` → 1 / 0 / 0.5 / 0 — and numeric scores pass through.
+maps them - `C`/`I`/`P`/`N` → 1 / 0 / 0.5 / 0 - and numeric scores pass through.
 An Inspect log holds a single model, so compare two runs:
 
 ```bash
@@ -90,7 +90,7 @@ A flat list of rows, one per (example, model). Column names are matched flexibly
 
 ### JSONL (line-delimited records)
 
-The same records, one JSON object per line — the streaming-friendly shape many
+The same records, one JSON object per line - the streaming-friendly shape many
 eval harnesses emit. Point EvalTrust at a `.jsonl` file directly:
 
 ```jsonl
@@ -106,7 +106,7 @@ for CSV and record lists.
 
 ### CSV
 
-Long format — one row per (example, model):
+Long format - one row per (example, model):
 
 ```csv
 id,model,score
@@ -114,7 +114,7 @@ q1,gpt-4,1
 q1,claude-3,0
 ```
 
-Wide format — one column per model:
+Wide format - one column per model:
 
 ```csv
 question,gpt-4,claude-3
@@ -145,7 +145,7 @@ without a `metric` column is treated as a single metric, exactly as before. See
 
 ## Single-model tools (two-file comparison)
 
-Some tools — DeepEval, LangSmith, OpenEvals, Inspect — evaluate one model per run,
+Some tools - DeepEval, LangSmith, OpenEvals, Inspect - evaluate one model per run,
 so a single export contains only one model. Run each model, then pass both files:
 
 ```bash
@@ -158,7 +158,7 @@ labels default to the models' own names, falling back to the file names if those
 collide, and can be overridden with `--model-a` and `--model-b`.
 
 If you only have **one** model and no second file to compare against, don't pass
-two files — just audit the single file. EvalTrust switches to auditing whether the
+two files - just audit the single file. EvalTrust switches to auditing whether the
 score itself is trustworthy (a confidence interval on it), and `--threshold 0.8`
 tests whether the model clears a target. See
 [Score Reliability](checks.md#single-model-score-reliability).
@@ -167,4 +167,4 @@ tests whether the model clears a target. See
 
 Detection fails loudly rather than guessing. If EvalTrust can't recognize a file it
 tells you what it looked for, so you can reshape the data into one of the formats
-above — or, better, [contribute an adapter](adapters.md) for it.
+above - or, better, [contribute an adapter](adapters.md) for it.

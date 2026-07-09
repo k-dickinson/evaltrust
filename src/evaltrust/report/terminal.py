@@ -1,9 +1,7 @@
 """Render an audit report to the terminal.
 
-The default view is built to be read in a glance: the verdict and one line, the
-checks grouped by pillar, then a short list of what to do. The full reasoning for
-each flag (why it matters, how we measured it) is one `--explain` away, so the
-common case stays clean and the detail is there when you want it.
+Verdict, checks grouped by pillar, then what to do. Per-flag reasoning is one
+``--explain`` away.
 """
 
 from __future__ import annotations
@@ -269,7 +267,7 @@ def render_diff_plain(diff) -> str:
 
 
 def render_plain(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as plain ASCII — safe for Windows, CI logs, and pipes."""
+    """Render the report as plain ASCII, safe for Windows, CI logs, and pipes."""
     v = report.verdict
     lines = ["EvalTrust  " + _subtitle(report)]
     others = _others(report)
@@ -313,7 +311,7 @@ _MD_MARK = {Status.PASS: "pass", Status.WARN: "warn",
 
 
 def render_markdown(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as Markdown — suitable for PR comments and docs."""
+    """Render the report as Markdown, suitable for PR comments and docs."""
     v = report.verdict
     lines = [f"# EvalTrust", "", f"**{_subtitle(report)}**", ""]
     others = _others(report)

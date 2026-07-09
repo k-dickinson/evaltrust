@@ -1,14 +1,8 @@
 """Judge Reliability audit.
 
-The question: if a different evaluator looked at the same outputs, would it reach
-the same verdict? An LLM judge is itself a noisy instrument. Two things matter:
-
-  - Consensus: do the judges even agree on which model wins? If the winner
-    depends on which judge you asked, the ranking is an artifact of the judge.
-  - Agreement: how much do the judges agree item by item, beyond chance, and is
-    one judge an outlier dragging the consensus around?
-
-Requires multi-judge data. Absent that, we SKIP with a recommendation.
+Would a different evaluator reach the same verdict? Checks consensus (do judges
+agree on the winner) and item-level agreement beyond chance. Requires multi-judge
+data; absent that, we SKIP.
 """
 
 from __future__ import annotations

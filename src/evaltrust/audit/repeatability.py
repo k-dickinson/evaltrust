@@ -1,11 +1,9 @@
 """Repeatability audit.
 
-The question: if you ran this evaluation again tomorrow, would you reach the same
-conclusion? Stochastic judges and sampling make eval scores wobble; if the winner
-changes from one run to the next, the ranking is noise dressed up as a result.
-
-Requires repeated-run data in the file. When it is absent we don't guess — we
-emit a SKIP that tells the user how to generate the evidence.
+If you ran this evaluation again tomorrow, would you reach the same conclusion?
+If the winner changes from one run to the next, the ranking is noise dressed up
+as a result. Requires repeated-run data; when it's absent we emit a SKIP that
+tells the user how to generate it.
 """
 
 from __future__ import annotations
@@ -140,9 +138,8 @@ def _variance(gap_std, overall, model_a, model_b) -> Finding:
 
 
 # --- single-model repeatability -------------------------------------------
-# With one model there is no gap to track, so the question becomes: does the
-# model's own score hold still across reruns? We measure the std of the per-run
-# mean score.
+# With one model there's no gap to track, so we ask whether the model's own score
+# holds still across reruns, via the std of the per-run mean score.
 
 def _skip_single(reason: str) -> Finding:
     return Finding(

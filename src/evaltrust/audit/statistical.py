@@ -1,21 +1,8 @@
 """Statistical Validity audit.
 
-The question: is the reported gap between two models real evidence you can act on?
-Three findings, each a separate view so nothing hides:
-
-  1. decision    - is there a real, meaningful improvement? The answer is one of
-                   three honest outcomes, never a blunt "not significant = fail":
-                     * significant  - the leader really is ahead
-                     * equivalent   - the models are the same within a margin you
-                                      set (a genuine conclusion, not a failure)
-                     * inconclusive - not enough evidence either way (underpowered)
-  2. effect_size - how big is the gap, in interpretable terms (Cohen's d, or a
-                   proportion effect size for pass/fail data)
-  3. precision   - was the sample large enough, framed prospectively via the
-                   minimum detectable effect (not misleading post-hoc power)
-
-For paired pass/fail data it uses McNemar's exact test and a proportion effect
-size; for continuous scores, a paired permutation test and Cohen's d.
+Three findings: decision (significant / equivalent / inconclusive), effect_size,
+and precision. Pass/fail data uses McNemar plus a proportion effect size;
+continuous scores use a permutation test plus Cohen's d.
 """
 
 from __future__ import annotations
@@ -47,13 +34,9 @@ def audit_statistical_validity(
 ) -> list[Finding]:
     """Audit whether the gap between two models is real, meaningful evidence.
 
-    ``significant`` normally stays ``None``, and this check makes the significance
-    call itself with a strict ``p < alpha``. A multiplicity procedure (Holm) that
-    has already decided rejection at the family level can instead OWN that call and
-    pass the result in as ``significant``; then the ``p < alpha`` comparison is not
-    performed, and ``alpha`` is only the metric's step threshold — reported in the
-    decision prose and used for the TOST equivalence interval (``1 - 2*alpha``) —
-    rather than the operative test. Every other output is unchanged.
+    ``significant`` stays ``None`` unless a multiplicity procedure (Holm) already
+    decided rejection and passes the result in; then ``alpha`` is only the step
+    threshold for the TOST interval, not the operative test.
     """
     raw = data.differences(model_a, model_b)  # score_b - score_a
     n = int(raw.size)
@@ -85,8 +68,7 @@ def audit_statistical_validity(
     lo, hi = bootstrap_ci(diffs, confidence=confidence,
                           n_resamples=n_resamples, seed=seed)
 
-    # --- equivalence (TOST): the (1 - 2*alpha) CI on the signed gap sits inside
-    #     the margin, i.e. any real difference is too small to matter. ---
+    # --- equivalence (TOST): (1 - 2*alpha) CI on the signed gap inside the margin ---
     eq_lo, eq_hi = bootstrap_ci(raw, confidence=1 - 2 * alpha,
                                 n_resamples=n_resamples, seed=seed)
     equivalent = eq_lo > -equivalence_margin and eq_hi < equivalence_margin
@@ -136,14 +118,8 @@ def _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
     if outcome == "significant":
         title = f"{leader} is significantly better than {trailer}"
         status = Status.PASS
-        # A multiplicity procedure that owns the decision (Holm) can reject on the
-        # boundary p == alpha (it rejects via adjusted_p <= alpha), so the operator
-        # must reflect reality rather than assume `p < alpha`. Every real path keeps
-        # p <= alpha on this branch (Holm-rejected metrics satisfy p <= their step
-        # threshold; the other corrections enter here only under strict p < alpha),
-        # so `>` never fires through audit_suite/run_audit -- but the `significant`
-        # override is public, so a caller forcing significance on p > alpha must
-        # still get a true string, never a false `<=`.
+        # Holm can reject on the boundary p == alpha, and the public `significant`
+        # override can force it on p > alpha, so pick the operator from reality.
         op = "<" if p < alpha else ("<=" if p == alpha else ">")
         how = (f"{cap} over {test_detail} gave p = {p:.4f} "
                f"({op} alpha {alpha}); the {conf_pct}% interval for the gap is {ci}.")
@@ -178,10 +154,8 @@ def _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
 
 def _effect_size(data, diffs, binary, leader, trailer) -> Finding:
     if binary:
-        # Pass rates must come from the paired sample, the same examples the
-        # p-value (McNemar) and the CI use -- an unpaired mean over every example
-        # a model scored would compute the effect size on a different sample than
-        # the significance test, and can flip the magnitude that drives PASS/WARN.
+        # Pass rates come from the paired sample (the same examples McNemar and
+        # the CI use), so the effect size is computed on the same data as the test.
         leader_scores, trailer_scores = data.paired_scores(leader, trailer)
         p_leader = float(leader_scores.mean())
         p_trailer = float(trailer_scores.mean())

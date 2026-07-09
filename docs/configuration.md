@@ -1,15 +1,15 @@
 # Configuration
 
 EvalTrust ships with sensible defaults, but a team can set its own statistical
-policy once and have it applied everywhere the audit runs — locally, in CI, and
+policy once and have it applied everywhere the audit runs - locally, in CI, and
 in the Python API.
 
 ## Where config comes from
 
 In order of precedence (highest first):
 
-1. **Command-line flags** — e.g. `--alpha`, `--equivalence-margin`, `--seed`.
-2. **An explicit file** — `evaltrust audit results.json --config policy.toml`.
+1. **Command-line flags** - e.g. `--alpha`, `--equivalence-margin`, `--seed`.
+2. **An explicit file** - `evaltrust audit results.json --config policy.toml`.
 3. **`.evaltrust.toml`** in the current directory.
 4. **`[tool.evaltrust]`** in `pyproject.toml`.
 5. **Built-in defaults**.
@@ -55,12 +55,12 @@ When a file scores several metrics, testing them all at the same `alpha` inflate
 false positives, so EvalTrust corrects the significance threshold for the number
 of metrics. Choose the method with `correction` (or `--correction` on the CLI):
 
-- **`bonferroni`** (default) — divide the threshold by the number of metrics
+- **`bonferroni`** (default) - divide the threshold by the number of metrics
   (`alpha / k`). Simple and strict.
-- **`holm`** — Holm-Bonferroni, a step-down refinement that rejects at least as
+- **`holm`** - Holm-Bonferroni, a step-down refinement that rejects at least as
   many metrics as Bonferroni at the same family-wise error rate, so a genuine win
   is less likely to be missed. It costs a second pass over the resampling.
-- **`none`** — audit each metric at the raw `alpha` with no correction.
+- **`none`** - audit each metric at the raw `alpha` with no correction.
 
 ```toml
 correction = "holm"
