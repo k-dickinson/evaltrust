@@ -2,7 +2,7 @@
 
 from evaltrust.audit.runner import run_audit
 from evaltrust.core.schema import EvalData, Example
-from evaltrust.report.terminal import render_report
+from evaltrust.report.terminal import render_markdown, render_report
 
 
 def make_data(scores_by_model, n):
@@ -59,3 +59,18 @@ def test_skip_guidance_shown_under_to_check_more():
     report = run_audit(make_data({"A": [0] * 40, "B": [1] * 36 + [0] * 4}, 40))
     out = render_report(report)
     assert "To check more" in out
+
+
+def test_markdown_report_contains_verdict_and_finding_titles():
+    report = run_audit(make_data({"A": [0] * 50, "B": [1] * 50}, 50))
+    out = render_markdown(report)
+    assert "# EvalTrust" in out
+    assert report.verdict.level.value in out
+    for f in report.findings:
+        assert f.title in out
+
+
+def test_markdown_explain_adds_detail():
+    report = run_audit(make_data({"A": [0, 1] * 60, "B": [1, 0] * 60}, 120))
+    assert "## Detail" not in render_markdown(report)
+    assert "## Detail" in render_markdown(report, explain=True)

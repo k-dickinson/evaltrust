@@ -296,3 +296,11 @@ def test_explain_flag_adds_detail(tmp_path):
     detailed = runner.invoke(app, ["audit", noise_file(tmp_path), "--explain"])
     assert "Detail" not in base.stdout
     assert "Detail" in detailed.stdout
+
+
+def test_md_output_contains_verdict_and_finding_titles(tmp_path):
+    result = runner.invoke(app, ["audit", clean_win_file(tmp_path), "--md"])
+    assert result.exit_code == 0
+    assert "# EvalTrust" in result.stdout
+    assert "High Confidence" in result.stdout or "high confidence" in result.stdout.lower()
+    assert "**[" in result.stdout
