@@ -19,6 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rate; each metric is re-run at its Holm-effective alpha so its verdict, prose,
   and equivalence interval stay consistent. `SuiteReport` gains `metric_alphas`
   and `adjusted_p`.
+- **BCa bootstrap intervals.** `stats.bootstrap_ci` gains a `method` option
+  (`"percentile"`, the default, or `"bca"`) for bias-corrected and accelerated
+  confidence intervals — second-order accurate and noticeably more faithful on
+  skewed data. The percentile interval stays the default everywhere; BCa is
+  validated against `scipy.stats.bootstrap(method="BCa")` and falls back to the
+  percentile interval (never a silent `NaN`) on degenerate samples.
 
 ### Fixed
 
