@@ -15,8 +15,10 @@ at 0.05 and one looks "significant" by luck). Two corrections are available:
   as many metrics as Bonferroni while controlling the same family-wise error
   rate. Because a metric's threshold depends on the *rank* of its p-value, Holm
   runs in two passes — once to read every p-value, then again re-running each
-  metric at its Holm-effective alpha so its status, prose, and equivalence CI are
-  all consistent with the correction applied.
+  metric at its Holm step threshold so its prose and equivalence CI stay
+  consistent with the correction. ``holm_bonferroni`` owns the rejection
+  decision; each metric's audit is *told* whether it was rejected rather than
+  re-deriving it, so the step threshold is only reporting context.
 """
 
 from __future__ import annotations
@@ -138,12 +140,20 @@ def audit_suite(
     return _holm_suite(suite, model_a, model_b, cfg, k)
 
 
-def _run_metrics(suite, model_a, model_b, cfg_for) -> "OrderedDict[str, AuditReport]":
-    """Run one audit per metric; ``cfg_for(metric)`` supplies each metric's config."""
+def _run_metrics(suite, model_a, model_b, cfg_for,
+                 significant_for=lambda _m: None) -> "OrderedDict[str, AuditReport]":
+    """Run one audit per metric.
+
+    ``cfg_for(metric)`` supplies each metric's config. ``significant_for(metric)``
+    optionally hands the metric's audit a pre-decided significance (used by Holm,
+    which owns the rejection call); the default ``None`` leaves each metric's audit
+    to decide with its own strict ``p < alpha``.
+    """
     reports: "OrderedDict[str, AuditReport]" = OrderedDict()
     for metric, data in suite.items():
         reports[metric] = run_audit(
-            data, model_a=model_a, model_b=model_b, config=cfg_for(metric))
+            data, model_a=model_a, model_b=model_b, config=cfg_for(metric),
+            significant=significant_for(metric))
     return reports
 
 
@@ -198,14 +208,17 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
     pvalues = [_pvalue(pass1[m]) for m in metrics]
 
     rejected, adjusted = holm_bonferroni(pvalues, cfg.alpha)
-    effective = _holm_effective_alphas(pvalues, rejected, cfg.alpha)
-    alpha_for = dict(zip(metrics, effective))
+    alpha_for = dict(zip(metrics, _holm_step_thresholds(pvalues, rejected, cfg.alpha)))
+    rejected_for = dict(zip(metrics, rejected))
 
-    # Pass 2: re-run each metric at its Holm-effective alpha so the decision
-    # status, prose, and equivalence CI (which uses 1 - 2*alpha) match it.
+    # Pass 2: Holm owns the rejection decision, so each metric's audit is *told*
+    # whether it was rejected (``significant_for``) rather than re-deriving it. It
+    # still re-runs at the metric's Holm step threshold so its prose and the
+    # equivalence CI (which uses 1 - 2*alpha) are quoted against that threshold.
     reports = _run_metrics(
         suite, model_a, model_b,
-        lambda m: replace(cfg, alpha=alpha_for[m]))
+        lambda m: replace(cfg, alpha=alpha_for[m]),
+        significant_for=lambda m: rejected_for[m])
 
     metric_alphas = OrderedDict((m, alpha_for[m]) for m in metrics)
     adjusted_p = OrderedDict((m, adjusted[i]) for i, m in enumerate(metrics))
@@ -219,23 +232,23 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
                        metric_alphas=metric_alphas, adjusted_p=adjusted_p)
 
 
-def _holm_effective_alphas(pvalues, rejected, alpha: float) -> list[float]:
-    """Per-metric alpha reproducing the Holm decision under the audit's ``p < alpha``.
+def _holm_step_thresholds(pvalues, rejected, alpha: float) -> list[float]:
+    """Per-metric Holm step threshold — REPORTING context, not the decision.
 
-    A rejected metric uses its own step threshold ``alpha / (k - rank)``; a
-    retained metric uses the threshold of the first failure, ``alpha / (k - m)``
+    A rejected metric's threshold is its own step ``alpha / (k - rank)``; a
+    retained metric takes the threshold of the first failure, ``alpha / (k - m)``
     where ``m`` is the number rejected (the step-down stops there). Ties are
     broken by input order (a stable sort), exactly as ``holm_bonferroni`` does,
     so two metrics with an identical p-value can receive different step
     thresholds — that is a genuine property of step-down Holm, not an artefact.
 
-    One subtlety: ``holm_bonferroni`` rejects with ``adjusted_p <= alpha`` (the
-    statsmodels convention) while the audit decides significance with a strict
-    ``p < alpha``. On the measure-zero boundary where a rejected metric's p-value
-    equals its step threshold exactly, we nudge the threshold up by one ULP so
-    the strict comparison still fires — keeping ``p < effective_alpha``
-    equivalent to Holm's rejection for every metric, with no observable effect
-    away from that exact tie.
+    These thresholds are the ``alpha`` each metric's audit reports: they are
+    quoted in the decision prose and used for its TOST equivalence interval
+    (``1 - 2*alpha``). They no longer decide significance — the rejection comes
+    straight from ``holm_bonferroni`` and is carried into each metric's audit — so
+    there is no ``p < alpha`` vs ``adjusted_p <= alpha`` boundary to reconcile and
+    no ULP nudge: a p-value landing exactly on its step threshold is reported with
+    that threshold verbatim.
     """
     p = np.asarray(pvalues, dtype=float)
     k = p.size
@@ -244,13 +257,10 @@ def _holm_effective_alphas(pvalues, rejected, alpha: float) -> list[float]:
     rank[order] = np.arange(k)
     n_rejected = int(sum(rejected))
 
-    effective = []
+    thresholds = []
     for i in range(k):
         if rejected[i]:
-            threshold = alpha / (k - rank[i])
-            if p[i] >= threshold:  # exact tie: p == threshold, Holm rejects via <=
-                threshold = float(np.nextafter(threshold, np.inf))
-            effective.append(float(threshold))
+            thresholds.append(float(alpha / (k - rank[i])))
         else:
-            effective.append(alpha / (k - n_rejected))
-    return effective
+            thresholds.append(float(alpha / (k - n_rejected)))
+    return thresholds

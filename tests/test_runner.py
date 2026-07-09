@@ -75,3 +75,18 @@ def test_is_deterministic():
     r2 = run_audit(data, seed=3)
     assert [f.details for f in r1.findings] == [f.details for f in r2.findings]
     assert r1.verdict.level is r2.verdict.level
+
+
+def _decision(report):
+    return next(f for f in report.findings if f.details.get("check") == "decision")
+
+
+def test_significant_override_forwards_to_the_statistical_decision():
+    # run_audit exposes the keyword-only `significant` override and forwards it to
+    # the two-model comparison's decision. Default (None) leaves the audit to
+    # decide; a clear win is significant.
+    data = make_data({"A": [0] * 200, "B": [1] * 180 + [0] * 20}, 200)
+    assert _decision(run_audit(data, seed=0)).details["outcome"] == "significant"
+    # Forcing significant=False overrides the decision despite the clear win.
+    assert _decision(
+        run_audit(data, seed=0, significant=False)).details["outcome"] != "significant"

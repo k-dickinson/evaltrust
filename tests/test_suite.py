@@ -127,6 +127,43 @@ def test_holm_reruns_each_metric_at_its_effective_alpha():
     assert holm.metric_alphas["borderline"] == pytest.approx(0.05 / 1)
 
 
+def test_metric_alphas_are_plain_floats_on_every_path():
+    # metric_alphas must be plain builtin `float` on BOTH the Holm path (step
+    # thresholds) and the Bonferroni/none paths, so the mapping never mixes numpy
+    # and builtin scalars. np.float64 subclasses float and serializes fine, but the
+    # type must stay uniform; `type(a) is float` rejects np.float64.
+    suite = {"strong": _strong(), "borderline": _borderline()}
+    for correction in ("holm", "bonferroni", "none"):
+        rep = audit_suite(suite, alpha=0.05, correction=correction, seed=0)
+        for m, a in rep.metric_alphas.items():
+            assert type(a) is float, (correction, m, type(a))
+    one = audit_suite({"only": _borderline()}, alpha=0.05, seed=0)   # single-metric path
+    assert type(one.metric_alphas["only"]) is float
+
+
+def test_holm_boundary_metric_prose_is_accurate_at_p_equals_step_threshold():
+    # The amendment's repro: a two-metric Holm suite whose top metric's permutation
+    # p lands EXACTLY on its step threshold (p = 1/40 = 0.025 = 0.05 / 2). Holm
+    # rejects it (adjusted_p <= alpha), so its decision is significant with
+    # p == alpha; the prose must read `<= alpha`, never the false `< alpha`.
+    def const(gap):
+        ex = [Example(id=f"e{i}", scores={"A": 0.5, "B": 0.5 + gap})
+              for i in range(12)]
+        return EvalData(models=["A", "B"], examples=ex, source_format="test",
+                        metadata={})
+
+    cfg = AuditConfig(alpha=0.05, n_resamples=39)
+    rep = audit_suite({"m1": const(0.30), "m2": const(0.0)}, "A", "B",
+                      config=cfg, correction="holm")
+    (dec,) = [f for f in rep.reports["m1"].findings
+              if f.details.get("check") == "decision"]
+    assert dec.details["outcome"] == "significant"
+    assert dec.details["p_value"] == 0.025
+    assert dec.details["p_value"] == rep.metric_alphas["m1"]     # p == alpha exactly
+    assert "(< alpha" not in dec.how_detected
+    assert "(<= alpha 0.025)" in dec.how_detected
+
+
 def test_holm_keeps_corrected_alpha_scalar_and_names_itself():
     suite = {f"m{i}": _borderline() for i in range(5)}
     holm = audit_suite(suite, alpha=0.05, correction="holm", seed=0)
@@ -212,18 +249,66 @@ def test_holm_outcomes_match_the_rejection_mask():
     assert significant == rejected
 
 
-def test_holm_effective_alpha_reproduces_rejection_on_the_boundary():
-    # A p-value sitting EXACTLY on its Holm step threshold is the one case where
-    # the audit's strict `p < alpha` and Holm's `p <= threshold` could disagree.
-    # p = 0.025 at k=2, alpha=0.05 lands on the first step (0.05 / 2 = 0.025).
-    from evaltrust.audit.suite import _holm_effective_alphas
+def test_holm_suite_decision_matches_statsmodels_reject_mask():
+    # The suite's CARRIED per-metric decision must equal statsmodels' Holm reject
+    # mask for the same p-values -- validated against the REFERENCE directly, not
+    # against the library's own holm_bonferroni. Three metrics of decreasing
+    # strength give a non-trivial mask (one rejected, two retained).
+    from statsmodels.stats.multitest import multipletests
+    suite = {"strong": _strong(),
+             "borderline": _borderline(),
+             "noise": metric_data([0, 1] * 40, [1, 0] * 40)}
+    holm = audit_suite(suite, alpha=0.05, correction="holm", seed=0)
+    ref_reject = list(multipletests(_holm_pvalues(suite), alpha=0.05,
+                                    method="holm")[0])
+    got = [outcome(holm, m) == "significant" for m in suite]
+    assert got == ref_reject
+    assert got.count(True) == 1 and got.count(False) == 2   # non-trivial mask
+
+
+def test_holm_boundary_decision_is_carried_not_re_derived():
+    # A p-value sitting EXACTLY on its Holm step threshold (p == alpha/(k-rank)) is
+    # the one place a strict `p < alpha` re-derivation and Holm's `adjusted_p <=
+    # alpha` disagree. Holm now OWNS the decision — it is carried into each metric's
+    # audit, not re-derived from the threshold — so the two agree structurally with
+    # NO nextafter/ULP nudge. p = 0.025 at k=2, alpha=0.05 lands on the first step
+    # (0.05 / 2 = 0.025).
+    from statsmodels.stats.multitest import multipletests
+
+    from evaltrust.audit.suite import _holm_step_thresholds
     from evaltrust.stats.multiplicity import holm_bonferroni
+
     pvals, alpha = [0.025, 0.5], 0.05
+    ref_reject = list(multipletests(pvals, alpha=alpha, method="holm")[0])
     rejected, _ = holm_bonferroni(pvals, alpha)
-    assert rejected == [True, False]           # Holm rejects the boundary metric
-    eff = _holm_effective_alphas(pvals, rejected, alpha)
-    decided = [pvals[i] < eff[i] for i in range(len(pvals))]
-    assert decided == rejected                 # the strict `<` re-run agrees
+    assert rejected == ref_reject == [True, False]   # matches statsmodels' reject mask
+    # The step threshold is reported verbatim: p == threshold, NOT nudged up an ULP.
+    thresholds = _holm_step_thresholds(pvals, rejected, alpha)
+    assert thresholds[0] == pytest.approx(0.025)
+    assert thresholds[0] == pvals[0]
+    # A strict `p < threshold` re-derivation would MISS the boundary metric; it is
+    # carrying Holm's `rejected` that makes it come out significant.
+    assert not (pvals[0] < thresholds[0])
+
+
+def test_uncorrected_paths_still_decide_by_strict_p_less_than_alpha():
+    # The refactor adds a `significant` override, but ONLY Holm uses it. The
+    # bonferroni, none, and single-metric paths must still decide exactly as main
+    # did — a strict `p < metric_alpha`. Validate the audit's outcome against that
+    # rule recomputed independently from the raw p-values (a reference, never the
+    # audit's own decision), so this is a byte-for-byte guard on those paths.
+    suite = {"strong": _strong(), "borderline": _borderline(), "mid": _borderline()}
+    raw_p = dict(zip(suite, _holm_pvalues(suite)))
+    for correction in ("none", "bonferroni"):
+        rep = audit_suite(suite, alpha=0.05, correction=correction, seed=0)
+        for m in suite:
+            expected = raw_p[m] < rep.metric_alphas[m]
+            assert (outcome(rep, m) == "significant") is expected
+    # single-metric path (k == 1) never corrects and never overrides.
+    one = {"only": _borderline()}
+    p1 = _holm_pvalues(one)[0]
+    rep1 = audit_suite(one, alpha=0.05, seed=0)
+    assert (outcome(rep1, "only") == "significant") is (p1 < rep1.metric_alphas["only"])
 
 
 def test_bonferroni_adjusted_p_matches_statsmodels():
