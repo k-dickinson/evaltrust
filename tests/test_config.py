@@ -59,3 +59,104 @@ def test_explicit_path_is_read(tmp_path):
     p = tmp_path / "policy.toml"
     p.write_text("alpha = 0.005\n")
     assert AuditConfig.load(path=str(p)).alpha == 0.005
+
+
+# ---------------------------------------------------------------------------
+# New fields: gated_metrics and metric_weights
+# ---------------------------------------------------------------------------
+
+def test_gated_metrics_defaults_to_empty_frozenset():
+    assert AuditConfig().gated_metrics == frozenset()
+    assert isinstance(AuditConfig().gated_metrics, frozenset)
+
+
+def test_metric_weights_defaults_to_empty_mapping():
+    from types import MappingProxyType
+    cfg = AuditConfig()
+    assert dict(cfg.metric_weights) == {}
+    assert isinstance(cfg.metric_weights, MappingProxyType)
+
+
+def test_audit_config_is_hashable_with_weights():
+    cfg = AuditConfig(metric_weights={"correctness": 2.0, "style": 1.0})
+    # Must not raise TypeError: unhashable type.
+    h = hash(cfg)
+    assert isinstance(h, int)
+
+
+def test_audit_config_equal_weight_order_independent():
+    """Configs with the same weights in different insertion order must be equal."""
+    cfg1 = AuditConfig(metric_weights={"a": 1.0, "b": 3.0})
+    cfg2 = AuditConfig(metric_weights={"b": 3.0, "a": 1.0})
+    assert cfg1 == cfg2
+    assert hash(cfg1) == hash(cfg2)
+
+
+def test_metric_weights_is_immutable():
+    cfg = AuditConfig(metric_weights={"correctness": 2.0})
+    with pytest.raises(TypeError):
+        cfg.metric_weights["safety"] = 99.0  # type: ignore[index]
+
+
+def test_zero_weight_raises_value_error():
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig(metric_weights={"correctness": 0.0})
+
+
+def test_negative_weight_raises_value_error():
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig(metric_weights={"safety": -5.0})
+
+
+def test_from_dict_coerces_gated_metrics_list_to_frozenset():
+    cfg = AuditConfig.from_dict({"gated_metrics": ["safety", "toxicity"]})
+    assert isinstance(cfg.gated_metrics, frozenset)
+    assert cfg.gated_metrics == frozenset({"safety", "toxicity"})
+
+
+def test_from_dict_coerces_metric_weights_to_mapping_proxy():
+    from types import MappingProxyType
+    cfg = AuditConfig.from_dict({"metric_weights": {"correctness": 3.0}})
+    assert isinstance(cfg.metric_weights, MappingProxyType)
+    assert cfg.metric_weights["correctness"] == 3.0
+
+
+def test_from_dict_rejects_zero_weight():
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig.from_dict({"metric_weights": {"correctness": 0.0}})
+
+
+def test_from_dict_rejects_negative_weight():
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig.from_dict({"metric_weights": {"style": -1.0}})
+
+
+def test_load_gated_and_weights_from_toml(tmp_path):
+    (tmp_path / ".evaltrust.toml").write_text(
+        'gated_metrics = ["safety"]\n'
+        '[metric_weights]\ncorrectness = 3.0\nstyle = 1.0\n'
+    )
+    cfg = AuditConfig.load(start_dir=str(tmp_path))
+    assert cfg.gated_metrics == frozenset({"safety"})
+    assert cfg.metric_weights["correctness"] == 3.0
+    assert cfg.metric_weights["style"] == 1.0
+
+
+def test_load_zero_weight_from_toml_raises(tmp_path):
+    (tmp_path / ".evaltrust.toml").write_text(
+        '[metric_weights]\ncorrectness = 0.0\n'
+    )
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig.load(start_dir=str(tmp_path))
+
+
+def test_dataclass_replace_preserves_immutability():
+    """dataclasses.replace on a config with weights must still produce a valid config."""
+    from dataclasses import replace
+    cfg = AuditConfig(metric_weights={"correctness": 2.0})
+    cfg2 = replace(cfg, alpha=0.01)
+    assert cfg2.alpha == 0.01
+    assert cfg2.metric_weights["correctness"] == 2.0
+    # Still immutable
+    with pytest.raises(TypeError):
+        cfg2.metric_weights["new"] = 1.0  # type: ignore[index]

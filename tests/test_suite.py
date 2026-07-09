@@ -79,6 +79,9 @@ def test_to_dict_is_json_serializable():
     assert "corrected_alpha" in parsed
     assert "metric_alphas" in parsed
     assert "adjusted_p" in parsed
+    # Policy transparency: applied gates and weights are always present in JSON.
+    assert "applied_gates" in parsed
+    assert "applied_weights" in parsed
 
 
 # ---------------------------------------------------------------------------
@@ -360,15 +363,20 @@ def test_ungated_metric_does_not_affect_gate():
 
 
 def test_metric_weights_favour_high_scoring_metric():
-    """A heavily-weighted HIGH metric lifts the overall level above LOW."""
+    """Weights de-emphasise the weak metric but the weakest-metric floor still applies.
+
+    Without a gate the suite cannot be lifted above the un-weighted minimum:
+    correctness=HIGH weight=9, noise=LOW weight=1 → weighted avg = 1.8 → HIGH,
+    but the floor is LOW (the weakest metric), so overall_level stays LOW.
+    """
     suite = {
         "correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),  # HIGH
         "noise": metric_data([0, 1] * 60, [1, 0] * 60),               # LOW
     }
     cfg = AuditConfig(metric_weights={"correctness": 9.0, "noise": 1.0})
     report = audit_suite(suite, config=cfg, seed=0)
-    # weighted avg rank: (2*9 + 0*1)/10 = 1.8 → HIGH
-    assert report.overall_level is VerdictLevel.HIGH
+    # Floor: the suite can never exceed its weakest metric under --fail-under.
+    assert report.overall_level is VerdictLevel.LOW
 
 
 def test_metric_weights_default_behaviour_unchanged():
@@ -389,3 +397,173 @@ def test_unknown_gated_metric_is_ignored():
     cfg = AuditConfig(gated_metrics=frozenset({"nonexistent"}))
     report = audit_suite(suite, config=cfg, seed=0)
     assert report.overall_level is VerdictLevel.HIGH
+
+
+# ---------------------------------------------------------------------------
+# Reviewer follow-up: semantic and contract fixes
+# ---------------------------------------------------------------------------
+
+def test_weights_cannot_lift_suite_above_weakest_metric():
+    """Weights never let overall_level exceed the un-weighted weakest-metric minimum.
+
+    This is the weakest-metric floor: --fail-under consumers are protected even
+    when metric_weights is non-empty and the weighted average would be higher.
+    """
+    suite = {
+        "correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),  # HIGH
+        "safety": metric_data([0, 1] * 60, [1, 0] * 60),              # LOW
+    }
+    # Extreme weight on correctness would push weighted avg to ~1.8 → HIGH
+    # without the floor.  With the floor it must stay at LOW.
+    cfg = AuditConfig(metric_weights={"correctness": 99.0, "safety": 1.0})
+    report = audit_suite(suite, config=cfg, seed=0)
+    assert report.overall_level is VerdictLevel.LOW
+
+
+def test_weights_can_lower_suite_below_unweighted_level():
+    """Weights *can* pull the suite down (de-emphasise nothing prevents sinking)."""
+    suite = {
+        "correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),  # HIGH
+        "style": metric_data([0] * 200, [1] * 180 + [0] * 20),        # HIGH
+    }
+    # Both are HIGH so weakest = HIGH; a uniformly weighted suite stays HIGH.
+    cfg = AuditConfig(metric_weights={"correctness": 1.0, "style": 1.0})
+    report = audit_suite(suite, config=cfg, seed=0)
+    assert report.overall_level is VerdictLevel.HIGH
+
+
+def test_uniform_weights_same_as_no_weights_when_all_equal():
+    """Uniform weights on an all-HIGH suite still yield HIGH."""
+    suite = {"a": metric_data([0] * 200, [1] * 180 + [0] * 20),
+             "b": metric_data([0] * 200, [1] * 180 + [0] * 20)}
+    no_weights = audit_suite(suite, seed=0)
+    with_weights = audit_suite(
+        suite, config=AuditConfig(metric_weights={"a": 1.0, "b": 1.0}), seed=0)
+    assert no_weights.overall_level is with_weights.overall_level
+
+
+def test_gated_metric_fires_before_weights_are_applied():
+    """A gated LOW metric forces LOW even when weights would compute HIGH."""
+    suite = {
+        "safety": metric_data([0, 1] * 60, [1, 0] * 60),              # LOW
+        "correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),  # HIGH
+    }
+    cfg = AuditConfig(
+        gated_metrics=frozenset({"safety"}),
+        metric_weights={"correctness": 99.0, "safety": 1.0},
+    )
+    report = audit_suite(suite, config=cfg, seed=0)
+    assert report.overall_level is VerdictLevel.LOW
+
+
+def test_unknown_weight_names_do_not_turn_on_averaging():
+    """Weight names not present in the suite are ignored; if none match, fall back
+    to weakest-metric (no averaging side-effect from a misspelled name)."""
+    suite = {
+        "correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),  # HIGH
+        "safety": metric_data([0, 1] * 60, [1, 0] * 60),              # LOW
+    }
+    # Weights only name non-existent metrics → no relevant weights → fallback.
+    cfg = AuditConfig(metric_weights={"nonexistent_metric": 9.0})
+    report = audit_suite(suite, config=cfg, seed=0)
+    assert report.overall_level is VerdictLevel.LOW
+
+
+# ---------------------------------------------------------------------------
+# AuditConfig contract: immutability, hashability, type coercion, validation
+# ---------------------------------------------------------------------------
+
+def test_audit_config_is_hashable():
+    """AuditConfig with metric_weights must be usable in sets and as dict keys."""
+    cfg = AuditConfig(metric_weights={"correctness": 2.0})
+    assert hash(cfg) == hash(cfg)
+    s = {cfg}
+    assert cfg in s
+
+
+def test_audit_config_equal_configs_have_equal_hashes():
+    cfg1 = AuditConfig(metric_weights={"a": 1.0, "b": 2.0})
+    cfg2 = AuditConfig(metric_weights={"b": 2.0, "a": 1.0})
+    assert cfg1 == cfg2
+    assert hash(cfg1) == hash(cfg2)
+
+
+def test_metric_weights_is_immutable():
+    """metric_weights must be read-only; in-place mutation should raise."""
+    cfg = AuditConfig(metric_weights={"correctness": 2.0})
+    with pytest.raises(TypeError):
+        cfg.metric_weights["safety"] = 10.0  # type: ignore[index]
+
+
+def test_zero_weight_raises_at_config_construction():
+    """A weight of zero is rejected immediately (would cause ZeroDivisionError later)."""
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig(metric_weights={"correctness": 0.0})
+
+
+def test_negative_weight_raises_at_config_construction():
+    """Negative weights are rejected immediately."""
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig(metric_weights={"correctness": -1.0})
+
+
+def test_from_dict_coerces_gated_metrics_list_to_frozenset():
+    """TOML has no set type; from_dict must coerce a list to frozenset."""
+    cfg = AuditConfig.from_dict({"gated_metrics": ["safety", "toxicity"]})
+    assert isinstance(cfg.gated_metrics, frozenset)
+    assert cfg.gated_metrics == frozenset({"safety", "toxicity"})
+
+
+def test_from_dict_coerces_metric_weights_dict_to_mapping_proxy():
+    """from_dict must produce an immutable MappingProxyType, not a plain dict."""
+    from types import MappingProxyType
+    cfg = AuditConfig.from_dict({"metric_weights": {"correctness": 3.0, "style": 1.0}})
+    assert isinstance(cfg.metric_weights, MappingProxyType)
+    assert cfg.metric_weights["correctness"] == 3.0
+
+
+def test_from_dict_rejects_zero_weight():
+    """from_dict must surface invalid weights as ValueError, not swallow them."""
+    with pytest.raises(ValueError, match="positive"):
+        AuditConfig.from_dict({"metric_weights": {"correctness": 0.0}})
+
+
+def test_from_dict_loads_gated_and_weights_from_toml(tmp_path):
+    """End-to-end: load gated_metrics and metric_weights from a TOML file."""
+    (tmp_path / ".evaltrust.toml").write_text(
+        'gated_metrics = ["safety"]\n'
+        '[metric_weights]\ncorrectness = 3.0\nstyle = 1.0\n'
+    )
+    cfg = AuditConfig.load(start_dir=str(tmp_path))
+    assert cfg.gated_metrics == frozenset({"safety"})
+    assert cfg.metric_weights["correctness"] == 3.0
+    assert cfg.metric_weights["style"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# to_dict policy transparency
+# ---------------------------------------------------------------------------
+
+def test_to_dict_surfaces_applied_gates():
+    """JSON output must include the gate names that were active."""
+    suite = {"correctness": metric_data([0] * 200, [1] * 180 + [0] * 20)}
+    cfg = AuditConfig(gated_metrics=frozenset({"correctness", "safety"}))
+    d = audit_suite(suite, config=cfg, seed=0).to_dict()
+    assert set(d["applied_gates"]) == {"correctness", "safety"}
+
+
+def test_to_dict_surfaces_applied_weights():
+    """JSON output must include the weight map that was applied."""
+    suite = {"correctness": metric_data([0] * 200, [1] * 180 + [0] * 20),
+             "style": metric_data([0] * 200, [1] * 180 + [0] * 20)}
+    cfg = AuditConfig(metric_weights={"correctness": 3.0, "style": 1.0})
+    d = audit_suite(suite, config=cfg, seed=0).to_dict()
+    assert d["applied_weights"] == {"correctness": 3.0, "style": 1.0}
+
+
+def test_to_dict_with_no_policy_has_empty_gates_and_weights():
+    """Default config → applied_gates=[] and applied_weights={}."""
+    suite = {"correctness": metric_data([0] * 200, [1] * 180 + [0] * 20)}
+    d = audit_suite(suite, seed=0).to_dict()
+    assert d["applied_gates"] == []
+    assert d["applied_weights"] == {}
