@@ -71,3 +71,37 @@ def test_merge_preserves_judges_from_both_files():
     ex = merge_two(a, b, "gpt", "claude").examples[0]
     assert ex.judges == {"j1": {"gpt": 1.0, "claude": 0.0},
                          "j2": {"gpt": 0.0, "claude": 0.0}}
+
+
+def test_merge_sums_skipped_rows_from_both_inputs():
+    a = single("gpt", {"q1": 1, "q2": 0})
+    b = single("claude", {"q1": 0, "q2": 1})
+    a.metadata["skipped_rows"] = 2
+    b.metadata["skipped_rows"] = 3
+    merged = merge_two(a, b, "gpt", "claude")
+    assert merged.metadata["skipped_rows"] == 5
+
+
+def test_merge_counts_unmatched_examples_from_both_sides():
+    a = single("gpt", {"q1": 1, "q2": 0, "q3": 1})       # q3 only in A
+    b = single("claude", {"q1": 0, "q2": 1, "q4": 0})    # q4 only in B
+    merged = merge_two(a, b, "gpt", "claude")
+    assert merged.n_examples == 2
+    assert merged.metadata["unmatched_examples"] == 2
+
+
+def test_merge_counts_examples_dropped_for_missing_scores():
+    a = single("gpt", {"q1": 1, "q2": 0})
+    b = single("claude", {"q1": 0})
+    b.examples.append(Example(id="q2", scores={}))  # q2 present but unscored
+    merged = merge_two(a, b, "gpt", "claude")
+    assert merged.n_examples == 1
+    assert merged.metadata["unmatched_examples"] == 2
+
+
+def test_merge_with_full_overlap_reports_zero_unmatched():
+    a = single("gpt", {"q1": 1, "q2": 0})
+    b = single("claude", {"q1": 0, "q2": 1})
+    merged = merge_two(a, b, "gpt", "claude")
+    assert merged.metadata["unmatched_examples"] == 0
+    assert merged.metadata["skipped_rows"] == 0

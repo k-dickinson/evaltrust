@@ -60,9 +60,18 @@ def merge_two(
             "Make sure both evaluations used the same examples with matching ids."
         )
 
+    # Pairing must not hide data: carry each file's skipped-row count forward,
+    # and count every example that didn't make it into the paired set (present
+    # in only one file, or missing its model's score) so Data Quality can
+    # report them.
+    skipped = (int(data_a.metadata.get("skipped_rows", 0))
+               + int(data_b.metadata.get("skipped_rows", 0)))
+    unmatched = ((len(data_a.examples) - len(examples))
+                 + (len(data_b.examples) - len(examples)))
+
     return EvalData(
         models=[label_a, label_b],
         examples=examples,
         source_format=f"{data_a.source_format}+{data_b.source_format}",
-        metadata={},
+        metadata={"skipped_rows": skipped, "unmatched_examples": unmatched},
     )

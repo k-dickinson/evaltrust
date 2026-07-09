@@ -13,6 +13,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rank correlation of 0.80 and 80% agreement are not the same bar. Both default to
   `0.8`, so output is unchanged until you set them apart.
 
+### Fixed
+
+- **Two-file pairing no longer hides dropped data.** Pairing two single-model
+  files now carries both files' `skipped_rows` counts forward and counts every
+  example that appears in only one file (or lacks a score) as
+  `unmatched_examples`; the audit reports them as a Data Quality finding
+  ("N examples dropped during pairing") instead of silently auditing the
+  overlap.
+
 ## [0.6.0] — 2026-07-09
 
 ### Added

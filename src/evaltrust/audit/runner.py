@@ -82,6 +82,28 @@ def _data_quality(data: EvalData) -> Finding | None:
     )
 
 
+def _pairing_coverage(data: EvalData) -> Finding | None:
+    """Flag examples dropped while pairing two single-model files."""
+    unmatched = int(data.metadata.get("unmatched_examples", 0))
+    if unmatched <= 0:
+        return None
+    kept = data.n_examples
+    return Finding(
+        pillar="Data Quality",
+        title=f"{unmatched} examples dropped during pairing",
+        status=Status.WARN,
+        why=("Only examples present in both files are compared. If the overlap "
+             "isn't random — one run stopped early, or covers different cases — "
+             "the audit compares the models on a biased slice."),
+        how_detected=(f"Paired {kept} shared examples; {unmatched} appeared in "
+                      "only one file (or lacked a score) and were dropped."),
+        how_to_fix=("Re-run both evaluations on the same example set, or check "
+                    "that ids match between the files."),
+        details={"check": "pairing_coverage", "unmatched_examples": unmatched,
+                 "kept": kept},
+    )
+
+
 def _pick_models(data: EvalData) -> tuple[str, str]:
     """Compare the two strongest models by mean score (stable, documented)."""
     if len(data.models) < 2:
@@ -132,9 +154,9 @@ def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
             "there's nothing to compare. Check the models and score columns.")
 
     findings: list[Finding] = []
-    dq = _data_quality(data)
-    if dq is not None:
-        findings.append(dq)
+    for quality in (_data_quality(data), _pairing_coverage(data)):
+        if quality is not None:
+            findings.append(quality)
     findings += audit_statistical_validity(
         data, model_a, model_b, alpha=cfg.alpha,
         equivalence_margin=cfg.equivalence_margin, power_target=cfg.power_target,

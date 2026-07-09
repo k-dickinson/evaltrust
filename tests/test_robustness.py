@@ -76,3 +76,29 @@ def test_model_with_no_comparable_scores_errors_cleanly(tmp_path):
                       '{"id":"q1","scores":{"A":1}},{"id":"q2","scores":{"A":0}}]}'))
     with pytest.raises(ValueError):
         run_audit(data, model_a="A", model_b="B")
+
+
+def test_unmatched_pairing_examples_reported_as_a_finding():
+    from evaltrust.core.schema import EvalData, Example
+
+    examples = [Example(id=str(i), scores={"A": float(i % 2), "B": float((i + 1) % 2)})
+                for i in range(40)]
+    data = EvalData(models=["A", "B"], examples=examples, source_format="t+t",
+                    metadata={"unmatched_examples": 25})
+    report = run_audit(data)
+    dq = [f for f in report.findings
+          if f.details.get("check") == "pairing_coverage"]
+    assert dq and dq[0].status is Status.WARN
+    assert "25" in dq[0].title
+
+
+def test_fully_paired_files_have_no_pairing_finding():
+    from evaltrust.core.schema import EvalData, Example
+
+    examples = [Example(id=str(i), scores={"A": float(i % 2), "B": float((i + 1) % 2)})
+                for i in range(40)]
+    data = EvalData(models=["A", "B"], examples=examples, source_format="t+t",
+                    metadata={"unmatched_examples": 0, "skipped_rows": 0})
+    report = run_audit(data)
+    assert not [f for f in report.findings
+                if f.details.get("check") == "pairing_coverage"]
