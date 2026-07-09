@@ -1,5 +1,7 @@
 """Tests for the canonical data model that every adapter maps into."""
 
+import json
+
 import numpy as np
 import pytest
 
@@ -81,3 +83,22 @@ def test_finding_carries_the_golden_rule_fields():
 
 def test_status_has_the_four_levels():
     assert {s.name for s in Status} == {"PASS", "WARN", "FAIL", "SKIP"}
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_to_dict_serializes_non_finite_floats_as_null(bad):
+    # An infinite Cohen's d (zero-variance gap) or an infinite SNR reaches the
+    # details dict as a bare float. json.dumps would emit `Infinity`/`NaN`, which
+    # is not valid JSON, so to_dict() must render them as null instead.
+    f = Finding(
+        pillar="Statistical Validity", title="t", status=Status.PASS,
+        why="w", how_detected="h", how_to_fix="x",
+        details={"cohens_d": bad, "nested": [bad], "deep": {"snr": bad}},
+    )
+    d = f.to_dict()["details"]
+    assert d["cohens_d"] is None
+    assert d["nested"] == [None]
+    assert d["deep"]["snr"] is None
+    # The whole payload must round-trip through a strict JSON parser.
+    text = json.dumps(f.to_dict(), allow_nan=False)
+    json.loads(text)

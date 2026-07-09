@@ -8,6 +8,7 @@ OpenEvals, or a plain CSV alike.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -111,17 +112,27 @@ class Finding:
 
 
 def _jsonable(value):
-    """Best-effort conversion of numpy/other scalars into plain JSON types."""
+    """Best-effort conversion of numpy/other scalars into plain JSON types.
+
+    Non-finite floats (``inf``/``-inf``/``nan``) — which a zero-variance Cohen's d
+    or an infinite signal-to-noise ratio can produce — become ``null``. Emitting
+    them verbatim would make ``json.dumps`` write the non-standard ``Infinity`` /
+    ``NaN`` tokens that strict JSON parsers reject.
+    """
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
-    if isinstance(value, bool) or value is None or isinstance(value, (str, int, float)):
+    if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     item = getattr(value, "item", None)  # numpy scalar -> python scalar
     if callable(item):
         try:
-            return value.item()
+            scalar = value.item()
         except (ValueError, TypeError):
             pass
+        else:
+            return _jsonable(scalar)  # re-check finiteness for numpy floats
     return str(value)
