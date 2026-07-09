@@ -1,6 +1,6 @@
 """DeepEval adapter.
 
-DeepEval evaluates one system per run, so a single export contains one model —
+DeepEval evaluates one system per run, so a single export contains one model;
 you compare two runs with ``evaltrust audit runA.json runB.json``. This adapter
 reads DeepEval's evaluation-result export (from ``evaluate(...)`` /
 ``deepeval test run``), tolerating both the snake_case (``test_results`` /

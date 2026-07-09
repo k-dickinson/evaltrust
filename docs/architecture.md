@@ -42,7 +42,7 @@ your eval output
 | `adapters/` | Detect a format (Promptfoo, DeepEval, nested JSON, records, CSV) and map it into the canonical model. |
 | `stats/` | Pure statistical primitives (resampling, effect size, power, McNemar, agreement). No knowledge of findings or formatting. |
 | `audit/` | The checks and the runner. Comparison (`statistical`), single-model (`single`), suites (`suite`), `benchmark_health`, `repeatability`, `judge_reliability`, `judge_calibration`, and the `verdict` rules. |
-| `config.py` | `AuditConfig` — every threshold in one place, loadable from `.evaltrust.toml`. |
+| `config.py` | `AuditConfig` - every threshold in one place, loadable from `.evaltrust.toml`. |
 | `diff.py` | Compare two saved audits to flag regressions. |
 | `report/terminal.py` | Render a report to the terminal (`rich`) or as plain ASCII. |
 | `api.py` | The public `evaltrust.audit(...)` / `audit_suite(...)` entry points. |

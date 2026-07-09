@@ -1,12 +1,8 @@
 """Power analysis for a paired (one-sample-on-differences) t-test.
 
-This is what turns "the difference wasn't significant" into an actionable
-recommendation. Either the effect is genuinely absent, or the sample was too
-small to see it — power analysis distinguishes the two and tells the user how
-many more examples would be needed.
-
-Uses the exact noncentral-t formulation (matching statsmodels), not a normal
-approximation.
+Turns "the difference wasn't significant" into a recommendation: either the
+effect is absent or the sample was too small to see it. Uses the exact
+noncentral-t formulation (matching statsmodels), not a normal approximation.
 """
 
 from __future__ import annotations
@@ -74,10 +70,9 @@ def minimum_detectable_effect(
 ) -> float:
     """Smallest true effect size (Cohen's d) detectable at ``power`` given ``n``.
 
-    This is *prospective* — a property of the sample size, not of the observed
-    result — so it avoids the circularity of post-hoc (observed-effect) power.
-    It answers "how small a real difference could this evaluation have reliably
-    caught?" Power is monotone in the effect size, so we bisect on d.
+    Prospective (a property of the sample size, not the observed result), so it
+    avoids the circularity of post-hoc power. Power is monotone in the effect
+    size, so we bisect on d.
     """
     if n < 2:
         return float("inf")

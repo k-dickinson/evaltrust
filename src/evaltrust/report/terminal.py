@@ -269,7 +269,7 @@ def render_diff_plain(diff) -> str:
 
 
 def render_plain(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as plain ASCII — safe for Windows, CI logs, and pipes."""
+    """Render the report as plain ASCII, safe for Windows, CI logs, and pipes."""
     v = report.verdict
     lines = ["EvalTrust  " + _subtitle(report)]
     others = _others(report)
@@ -313,7 +313,7 @@ _MD_MARK = {Status.PASS: "pass", Status.WARN: "warn",
 
 
 def render_markdown(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as Markdown — suitable for PR comments and docs."""
+    """Render the report as Markdown, suitable for PR comments and docs."""
     v = report.verdict
     lines = [f"# EvalTrust", "", f"**{_subtitle(report)}**", ""]
     others = _others(report)

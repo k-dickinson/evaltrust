@@ -2,9 +2,9 @@
 
 Single-system tools (DeepEval, LangSmith, OpenEvals) evaluate one model per run,
 so their exports contain a single model. Point EvalTrust at two such files and it
-pairs them by example id into the canonical two-model shape the auditor expects.
-A file that already contains several models is audited directly instead — this
-path is only for the one-model-per-file case.
+pairs them by example id into the canonical two-model shape. A file that already
+contains several models is audited directly; this path is only for the
+one-model-per-file case.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def primary_model(data: EvalData) -> str:
             f"Expected one model per file for a two-file comparison, but "
             f"'{data.source_format}' contained {len(data.models)} "
             f"({', '.join(map(str, data.models))}). Audit this file on its own "
-            f"instead — it already has models to compare."
+            f"instead; it already has models to compare."
         )
     return data.models[0]
 

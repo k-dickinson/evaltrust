@@ -102,16 +102,13 @@ def run_audit(
     *,
     significant: bool | None = None,
 ) -> AuditReport:
-    # A config bundles every threshold; when not given, build one from the loose
-    # kwargs so existing callers keep working unchanged.
+    # When no config is given, build one from the loose kwargs.
     cfg = config or AuditConfig(alpha=alpha, equivalence_margin=equivalence_margin,
                                 seed=seed)
 
-    # `significant` lets a multiplicity procedure own a two-model comparison's
-    # significance decision (see audit_statistical_validity). It is a per-run
-    # override, not team policy, so it lives here and never in AuditConfig; it
-    # applies only to the comparison path (single-model audits ignore it).
-    # Dispatch: two models -> comparison; a threshold or a lone model -> single.
+    # `significant` is a per-run override for the comparison path (used by Holm);
+    # single-model audits ignore it. Dispatch: two models -> comparison; a
+    # threshold or a lone model -> single.
     if model_a is not None and model_b is not None:
         return _comparison(data, model_a, model_b, cfg, significant=significant)
     if threshold is not None:

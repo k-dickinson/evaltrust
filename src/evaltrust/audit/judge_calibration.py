@@ -1,18 +1,15 @@
-"""Judge calibration — does the AI judge agree with the humans?
+"""Judge calibration: does the AI judge agree with the humans?
 
-Most eval untrustworthiness comes from the judge, not the arithmetic. If the file
-includes a human/gold judge alongside the AI judge(s), we treat it as ground truth
-and measure how well each AI judge matches it. A judge that agrees with humans
-only 70% of the time can't be trusted to rank models on its own.
+If the file includes a human/gold judge alongside the AI judge(s), we treat it as
+ground truth and measure how well each AI judge matches it.
 
-For pass/fail judges we measure exact-match **agreement**. For judges that score on
-a continuous scale (a 1–5 rubric, say), exact match is the wrong question — what
-matters for comparing models is whether the judge *ranks* examples like the humans
-do — so we switch to a **Spearman rank correlation**. The finding always names
-which metric was used, so a correlation is never mistaken for an agreement rate.
+Pass/fail judges use exact-match agreement. Continuous scores (a 1-5 rubric, say)
+use a Spearman rank correlation instead, since what matters for comparing models
+is whether the judge ranks examples like the humans do. The finding names which
+metric was used, so a correlation is never read as an agreement rate.
 
-Include your human labels as a judge named ``gold``/``human``/``reference`` (etc.),
-or name the reference judge explicitly.
+Include human labels as a judge named ``gold``/``human``/``reference`` (etc.), or
+name the reference judge explicitly.
 """
 
 from __future__ import annotations
@@ -33,15 +30,10 @@ REFERENCE_NAMES = {"gold", "human", "humans", "reference", "ground_truth",
 def _use_exact_match(data: EvalData, judges, models) -> bool:
     """True when calibration should use exact-match agreement, not correlation.
 
-    Agreement applies to binary 0/1 scores and to any non-numeric scores the
-    original ``==`` comparison handled (e.g. ``"pass"``/``"fail"`` an adapter
-    would normally coerce). Correlation is used only when the scores are numeric
-    and range beyond {0, 1}. With no comparable scores at all, exact match is
-    chosen so the no-data case stays silent (returns ``[]``), exactly as before.
-
-    Deliberately local to this module: ``statistical.py::_is_binary`` is private,
-    in another module, and inspects *model* scores; calibration needs the test
-    over *judge* scores. The small duplication is intentional.
+    Agreement applies to binary 0/1 scores and to any non-numeric scores.
+    Correlation is used only when the scores are numeric and range beyond {0, 1}.
+    With no comparable scores, exact match is chosen so the no-data case stays
+    silent (returns ``[]``).
     """
     numeric: set[float] = set()
     for ex in data.examples:
@@ -84,11 +76,9 @@ def audit_judge_calibration(
 ) -> list[Finding]:
     """Return a calibration finding, or [] when there's nothing to calibrate.
 
-    Silent (returns []) when there are no judges or no reference judge — the
-    general Judge Reliability check already covers the multi-judge case. Binary
-    judge scores are audited by exact-match agreement; continuous scores by a
-    Spearman rank correlation. The ``threshold`` is the pass floor for whichever
-    metric applies — a fraction agreed for binary, a correlation for continuous.
+    Silent (returns []) when there are no judges or no reference judge. Binary
+    judge scores use exact-match agreement; continuous scores use a Spearman rank
+    correlation. ``threshold`` is the pass floor for whichever metric applies.
     """
     if not data.has_judges:
         return []
@@ -99,7 +89,7 @@ def audit_judge_calibration(
         return []
 
     others = [j for j in judges if j != ref]
-    if not others:                          # no AI judge to calibrate -> silent, as before
+    if not others:                          # no AI judge to calibrate
         return []
     if _use_exact_match(data, [ref, *others], (model_a, model_b)):
         return _calibration_exact_match(data, model_a, model_b, threshold, ref, others)
@@ -110,11 +100,7 @@ def _calibration_exact_match(
     data: EvalData, model_a: str, model_b: str, threshold: float,
     ref: str, others: list[str],
 ) -> list[Finding]:
-    """Exact-match agreement for binary (pass/fail) judge scores.
-
-    This is the original calibration behaviour, unchanged, so binary inputs
-    produce byte-identical findings.
-    """
+    """Exact-match agreement for binary (pass/fail) judge scores."""
     accuracies: dict[str, float] = {}
     for j in others:
         matches = total = 0
@@ -169,11 +155,9 @@ def _calibration_correlation(
     """Spearman rank correlation for continuous judge scores.
 
     Rank correlation asks whether the judge orders examples like the reference,
-    which is the right question for comparing models: a judge that ranks perfectly
-    but is systematically offset still ranks the two models correctly, and here
-    reports a high correlation by design. ``threshold`` is applied as a floor on
-    the correlation, and the finding text names the metric so a rho is never read
-    as an agreement rate.
+    the right question for comparing models. ``threshold`` is a floor on the
+    correlation, and the finding names the metric so a rho isn't read as an
+    agreement rate.
     """
     correlations: dict[str, float] = {}
     max_points = 0
@@ -197,12 +181,10 @@ def _calibration_correlation(
 
     if not correlations:
         if max_points == 0:
-            # No comparable judge-vs-reference scores at all: nothing to
-            # calibrate, so stay silent exactly as the exact-match path does.
+            # No comparable scores at all: nothing to calibrate, so stay silent.
             return []
-        # There is some comparable data, but no judge has two or more paired
-        # points whose values vary — the two things a rank correlation needs.
-        # One message covers both causes so it can never misstate which applied.
+        # Some comparable data, but no judge has two or more paired points whose
+        # values vary (both needed for a rank correlation).
         return [Finding(
             pillar=PILLAR,
             title=f"Judge calibration vs {ref} not measurable",

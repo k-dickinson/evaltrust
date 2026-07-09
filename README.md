@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>An auditor for LLM evaluations.</strong><br>
-  It doesn't tell you how good your model is — it tells you whether you can trust the evaluation you used to decide.
+  It doesn't tell you how good your model is - it tells you whether you can trust the evaluation you used to decide.
 </p>
 
 <p align="center">
@@ -34,13 +34,13 @@ that are just noise.
 
 EvalTrust does the math that tells you. Point it at your eval results and it says,
 in plain English, whether the difference is **real**, whether it's **big enough to
-matter**, and whether you had **enough data to know** — then gives you one verdict:
+matter**, and whether you had **enough data to know** - then gives you one verdict:
 **High, Moderate, or Low confidence.** You keep using whatever eval tool you
 already have. Think of it as a code reviewer for your eval's conclusion.
 
 ## Why you can't just eyeball it
 
-Think about a coin. Flip it 10 times, get 6 heads. Rigged? No — that happens by
+Think about a coin. Flip it 10 times, get 6 heads. Rigged? No - that happens by
 luck constantly. Now flip it 1,000 times and get 600 heads. *That's* real. Six
 out of ten and six hundred out of a thousand look the same on the surface, but
 only one is signal.
@@ -74,7 +74,7 @@ What to do
   • Collect ~90 more examples (~240 total) to catch a small effect.
 ```
 
-Two runs at 71% and 74% — a three-point "win" that is actually noise. EvalTrust
+Two runs at 71% and 74% - a three-point "win" that is actually noise. EvalTrust
 catches it before it becomes a shipping decision. (Add `--explain` for the exact
 p-values and reasoning behind each line.)
 
@@ -83,31 +83,31 @@ p-values and reasoning behind each line.)
 One tool, whether you're comparing models, sanity-checking a single eval, or
 gating CI:
 
-- **Compare two models** — is B really better than A, or is that gap just noise?
+- **Compare two models** - is B really better than A, or is that gap just noise?
   Significance, effect size, equivalence ("they're actually the same"), and
   whether your sample was even big enough to tell.
-- **Audit a single model** — no comparison needed. It puts a confidence interval
+- **Audit a single model** - no comparison needed. It puts a confidence interval
   on your score (is 84% really `[80%, 88%]` or `[71%, 97%]`?) and, given a target,
   tests whether the model *actually* clears the bar.
-- **Audit a whole metric suite** — many metrics per example at once, with
+- **Audit a whole metric suite** - many metrics per example at once, with
   multiple-comparison correction so testing ten metrics doesn't hand you a fake win.
-- **Vet the judge** — do multiple LLM judges agree, and does the AI judge match
+- **Vet the judge** - do multiple LLM judges agree, and does the AI judge match
   human labels? The judge is where most eval trust quietly breaks.
-- **Vet the benchmark** — is it saturated, or too flat to separate anything?
-- **Catch regressions** — `evaltrust diff old.json new.json` flags where a metric
+- **Vet the benchmark** - is it saturated, or too flat to separate anything?
+- **Catch regressions** - `evaltrust diff old.json new.json` flags where a metric
   got worse since last release.
-- **Fit your workflow** — a CLI, a Python API, a pytest one-liner, a GitHub
+- **Fit your workflow** - a CLI, a Python API, a pytest one-liner, a GitHub
   Action, a `.evaltrust.toml` for team policy, and JSON output for everything else.
 
 ## Why the numbers are real, not our opinion
 
 Fair question for a tool that judges trust. Three things keep it honest:
 
-- **It runs standard, decades-old statistics** — the same significance tests,
+- **It runs standard, decades-old statistics** - the same significance tests,
   confidence intervals, and power analysis scientists already use. Nothing invented.
 - **The math is proven correct.** Every calculation is checked in the test suite
   against the libraries researchers trust (`scipy`, `statsmodels`) and must produce
-  the same numbers. So it's not "trust us" — it's "our math matches the reference
+  the same numbers. So it's not "trust us" - it's "our math matches the reference
   everyone already trusts."
 - **It's reproducible.** Same input, same answer, every time. An opinion drifts; a
   calculation doesn't.
@@ -123,7 +123,7 @@ statistician auditing your results, not a replacement for a well-designed eval.
 pip install evaltrust
 ```
 
-Requires Python 3.10 or newer. That's the whole setup — no API keys, no config,
+Requires Python 3.10 or newer. That's the whole setup - no API keys, no config,
 no account.
 
 <details>
@@ -171,9 +171,9 @@ Useful flags:
 | Flag | Effect |
 |------|--------|
 | `--json` | Emit the full audit as JSON, for CI logic and experiment trackers. |
-| `--plain` | Plain ASCII output — safe for Windows terminals, CI logs, and piping to a file. |
+| `--plain` | Plain ASCII output - safe for Windows terminals, CI logs, and piping to a file. |
 | `--explain` | Show why each flag matters and the numbers behind it. |
-| `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) — gate CI. |
+| `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) - gate CI. |
 | `--threshold` | For a single-model eval, the target score to test against (e.g. `0.8`). |
 | `--reference-judge` | Name the human/gold judge to calibrate the AI judges against. |
 | `--config` | Path to a config TOML (defaults to `.evaltrust.toml` / `pyproject`). |
@@ -185,7 +185,7 @@ Two saved audits can be compared for regressions with `evaltrust diff old.json n
 ## Use it standalone, or embed it in your eval
 
 Run the CLI by hand, **or** drop the audit into your own eval/test code and fail
-when the result isn't trustworthy — one line does it:
+when the result isn't trustworthy - one line does it:
 
 ```python
 import evaltrust
@@ -193,7 +193,7 @@ import evaltrust
 report = evaltrust.audit("results.json")      # path, two paths, or an EvalData
 report.raise_if_below("moderate")             # raises UntrustworthyError if too low
 
-report.to_dict()          # machine-readable JSON — log it, store it, diff it
+report.to_dict()          # machine-readable JSON: log it, store it, diff it
 ```
 
 In pytest, that makes "is my eval trustworthy?" a normal test:
@@ -226,7 +226,7 @@ More patterns in [`docs/integrations.md`](docs/integrations.md).
 
 ## What it checks
 
-EvalTrust audits several pillars of trust and ends in one plain-language verdict —
+EvalTrust audits several pillars of trust and ends in one plain-language verdict -
 **High**, **Moderate**, or **Low Confidence**. There is no arbitrary aggregate
 score.
 
@@ -235,19 +235,19 @@ score.
 | **Statistical Validity** | Is the difference a real improvement, no real difference, or just too little data to tell? Significance (McNemar for pass/fail, paired permutation for continuous), equivalence testing, an interpretable effect size, and the minimum detectable effect. *(For a single model: a confidence interval on the score, and an optional target test.)* |
 | **Benchmark Health** | Can the benchmark even separate these models, or is it saturated / flat? |
 | **Repeatability** | If you reran the evaluation, would the winner stay the winner? Uses repeated-run data when the file contains it. |
-| **Judge Reliability** | Would a different judge reach the same verdict — and does the AI judge match human labels? Uses multi-judge and human/gold data when the file contains it. |
+| **Judge Reliability** | Would a different judge reach the same verdict - and does the AI judge match human labels? Uses multi-judge and human/gold data when the file contains it. |
 
-Every finding follows the same rule — **why it matters**, **how we detected it**,
+Every finding follows the same rule - **why it matters**, **how we detected it**,
 and **how to fix it**. Checks that need extra data (repeated runs, multiple
 judges) don't guess when it's missing; they tell you how to generate it.
 
-Scoring several metrics per example (correctness, safety, tone…)? Add a `metric`
+Scoring several metrics per example (correctness, safety, tone...)? Add a `metric`
 column and EvalTrust audits each one, corrects the significance threshold for the
 number of metrics (so you don't get false wins by testing many), and reports the
 suite's confidence as its weakest metric.
 
 **Only evaluated one model?** Point it at a single model's scores and EvalTrust
-switches to asking *can I trust this number?* — it puts a confidence interval
+switches to asking *can I trust this number?* - it puts a confidence interval
 around your score (is 84% really `[80%, 88%]` or `[71%, 97%]`?) and, with
 `--threshold 0.8`, tests whether the model actually clears your bar.
 
@@ -260,13 +260,13 @@ You never write an EvalTrust-specific format. It reads what your tool already
 produced and auto-detects the shape. First-class adapters today:
 
 - **Promptfoo** results (several providers compared across test cases)
-- **DeepEval** test-results export (one model per run — pass two files to compare)
-- **Nested JSON** — `{"models": [...], "examples": [{"id", "scores": {...}}]}`
-- **Record lists** — JSON like `[{"id", "model", "score"}, ...]`
-- **CSV** — long (`id,model,score`) or wide (`id,gpt,claude`)
+- **DeepEval** test-results export (one model per run - pass two files to compare)
+- **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`
+- **Record lists** - JSON like `[{"id", "model", "score"}, ...]`
+- **CSV** - long (`id,model,score`) or wide (`id,gpt,claude`)
 
 Tools without a dedicated adapter yet (LangSmith, OpenEvals, and others) work by
-exporting to CSV or a record list — usually a one-liner. More native adapters are
+exporting to CSV or a record list - usually a one-liner. More native adapters are
 a top roadmap item; [contributing one](docs/adapters.md) is straightforward.
 Details and single-model pairing in [`docs/input-formats.md`](docs/input-formats.md).
 
@@ -287,14 +287,14 @@ resampling is seeded, so the auditor is itself reproducible. See
 Where it's headed (individual tasks are tracked in
 [issues](https://github.com/k-dickinson/evaltrust/issues)):
 
-- **Next:** native adapters for hosted platforms (LangSmith, Braintrust, …), an
+- **Next:** native adapters for hosted platforms (LangSmith, Braintrust, ...), an
   optional HTML report, and richer history/trend tracking.
 - **Later:** opt-in orchestration for the pillars that need to *generate* evidence
   (robustness perturbations, extra judges) and a provenance/reproducibility check.
 
 ## Contributing
 
-Contributions are welcome — new format adapters and additional checks especially.
+Contributions are welcome - new format adapters and additional checks especially.
 New here? Browse the
 [**good first issues**](https://github.com/k-dickinson/evaltrust/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22),
 then read [`CONTRIBUTING.md`](CONTRIBUTING.md). All participants are expected to
@@ -303,7 +303,7 @@ follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues per the
 
 ## License
 
-EvalTrust is released under the [MIT License](LICENSE) — a permissive,
+EvalTrust is released under the [MIT License](LICENSE) - a permissive,
 OSI-approved license. Anyone, including companies and organizations, may use,
 modify, and distribute it, in commercial or proprietary settings, free of charge.
 There is no copyleft obligation and no contributor license agreement to sign.

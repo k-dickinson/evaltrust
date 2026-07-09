@@ -1,4 +1,4 @@
-"""EvalTrust — is your eval's result real, or just noise?
+"""EvalTrust: is your eval's result real, or just noise?
 
 You ran an eval and got a score gap between two models. EvalTrust does the
 statistics that tell you whether that gap is a real improvement or a lucky streak,

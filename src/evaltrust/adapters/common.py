@@ -1,9 +1,9 @@
 """Shared ingestion primitives.
 
-Every eval tool, however it dresses up its output, is ultimately reporting: for
-this example, this model (or judge) got this score. We normalise everything to a
-stream of ``Record``s and group them here, once, correctly — so each format
-adapter only has to answer "where are the rows and what are the columns called?"
+Every eval tool ultimately reports: for this example, this model (or judge) got
+this score. We normalise everything to a stream of ``Record``s and group them
+here, so each adapter only has to answer "where are the rows and what are the
+columns called?"
 """
 
 from __future__ import annotations
@@ -51,8 +51,7 @@ def coerce_score(raw) -> float:
     """Turn the many spellings of a score into a float.
 
     Accepts numbers, booleans, numeric strings, and pass/fail-style words. Raises
-    on anything it can't confidently interpret — silently guessing a score would
-    undermine the whole point of an auditor.
+    on anything it can't confidently interpret, rather than guessing.
     """
     if isinstance(raw, bool):
         return 1.0 if raw else 0.0

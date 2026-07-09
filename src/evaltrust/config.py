@@ -1,9 +1,8 @@
-"""Audit configuration — one place for a team's statistical policy.
+"""Audit configuration: one place for a team's statistical policy.
 
-Every threshold the audit uses lives here with a sensible default. A team can
-override them in a ``.evaltrust.toml`` (or a ``[tool.evaltrust]`` table in
-``pyproject.toml``) checked into their repo, so the same policy is enforced
-everywhere the audit runs.
+Every threshold lives here with a sensible default. A team can override them in a
+``.evaltrust.toml`` (or a ``[tool.evaltrust]`` table in ``pyproject.toml``), so
+the same policy is enforced everywhere the audit runs.
 """
 
 from __future__ import annotations

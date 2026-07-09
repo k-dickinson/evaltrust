@@ -98,9 +98,9 @@ Use `--no-fail-on-regression` for a report-only diff.
 `--fail-under LEVEL` (and the action's `min-confidence`) accept `high`,
 `moderate`, or `low`:
 
-- `--fail-under high` — the strictest gate: fails on Moderate or Low.
-- `--fail-under moderate` — fails only on Low. (Same as the older `--strict`.)
-- `--fail-under low` — never fails on confidence; report only.
+- `--fail-under high` - the strictest gate: fails on Moderate or Low.
+- `--fail-under moderate` - fails only on Low. (Same as the older `--strict`.)
+- `--fail-under low` - never fails on confidence; report only.
 
 The CLI exits `0` when the gate passes, `1` when confidence is below the gate,
 and `2` on a usage or input error.

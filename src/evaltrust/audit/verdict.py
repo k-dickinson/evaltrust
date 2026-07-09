@@ -1,13 +1,13 @@
 """The overall confidence verdict.
 
-Deliberately *not* a weighted mystery score. The rule is simple and auditable:
+Not a weighted mystery score. The rule is simple and auditable:
 
   - Any FAIL  -> LOW      (a load-bearing part of the conclusion is unsupported)
   - Any WARN  -> MODERATE (the conclusion holds but with real caveats)
   - All PASS  -> HIGH     (the evidence backs the conclusion)
 
-SKIP findings are evidence you don't have; they never raise confidence. If there
-is no usable evidence at all, confidence is LOW by definition.
+SKIP findings never raise confidence. With no usable evidence at all, confidence
+is LOW by definition.
 """
 
 from __future__ import annotations

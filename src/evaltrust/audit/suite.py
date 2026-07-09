@@ -1,24 +1,19 @@
 """Audit a multi-metric evaluation suite.
 
-Real evals score several metrics per example (correctness, safety, helpfulness).
-A suite is just a set of named single-metric datasets, so we audit each one with
-the existing engine, comparing the *same* pair of models throughout, and correct
-the significance threshold for the number of metrics tested.
+A suite is a set of named single-metric datasets. We audit each one with the
+existing engine, comparing the same pair of models throughout, and correct the
+significance threshold for the number of metrics tested.
 
-Testing many metrics at the same alpha inflates false positives (test 20 metrics
-at 0.05 and one looks "significant" by luck). Two corrections are available:
+Two corrections are available:
 
-- **Bonferroni** divides the threshold by the number of metrics (``alpha / k``) —
-  the simplest defensible correction, and the default.
-- **Holm-Bonferroni** is a step-down refinement: it ranks the metrics by p-value
-  and tests the i-th smallest against ``alpha / (k - i)``, so it rejects at least
-  as many metrics as Bonferroni while controlling the same family-wise error
-  rate. Because a metric's threshold depends on the *rank* of its p-value, Holm
-  runs in two passes — once to read every p-value, then again re-running each
-  metric at its Holm step threshold so its prose and equivalence CI stay
-  consistent with the correction. ``holm_bonferroni`` owns the rejection
-  decision; each metric's audit is *told* whether it was rejected rather than
-  re-deriving it, so the step threshold is only reporting context.
+- Bonferroni divides the threshold by the number of metrics (``alpha / k``). The
+  default.
+- Holm-Bonferroni ranks the metrics by p-value and tests the i-th smallest
+  against ``alpha / (k - i)``, rejecting at least as many metrics as Bonferroni
+  at the same error rate. Because a metric's threshold depends on the rank of its
+  p-value, Holm runs in two passes: one to read every p-value, then one to re-run
+  each metric at its step threshold. ``holm_bonferroni`` owns the rejection
+  decision; each metric's audit is told the result rather than re-deriving it.
 """
 
 from __future__ import annotations
@@ -51,7 +46,7 @@ class SuiteReport:
 
     @property
     def overall_level(self) -> VerdictLevel:
-        """The worst verdict across metrics — the suite is only as trustworthy as
+        """The worst verdict across metrics; the suite is only as trustworthy as
         its weakest metric."""
         return min((r.verdict.level for r in self.reports.values()),
                    key=lambda lvl: _RANK[lvl])
@@ -111,8 +106,8 @@ def audit_suite(
     ``correction`` selects the multiple-comparison correction over
     ``{"bonferroni", "holm", "none"}``; ``None`` defers to the config
     (``AuditConfig.correction``, default ``"bonferroni"``). ``correct`` is a
-    deprecated legacy switch — ``correct=False`` still forces no correction; new
-    code should pass ``correction="none"`` instead.
+    deprecated legacy switch; ``correct=False`` still forces no correction, but
+    new code should pass ``correction="none"``.
     """
     if not suite:
         raise ValueError("The suite is empty.")
@@ -145,9 +140,8 @@ def _run_metrics(suite, model_a, model_b, cfg_for,
     """Run one audit per metric.
 
     ``cfg_for(metric)`` supplies each metric's config. ``significant_for(metric)``
-    optionally hands the metric's audit a pre-decided significance (used by Holm,
-    which owns the rejection call); the default ``None`` leaves each metric's audit
-    to decide with its own strict ``p < alpha``.
+    optionally passes a pre-decided significance (used by Holm); the default
+    ``None`` lets each metric's audit decide with its own ``p < alpha``.
     """
     reports: "OrderedDict[str, AuditReport]" = OrderedDict()
     for metric, data in suite.items():
@@ -211,10 +205,8 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
     alpha_for = dict(zip(metrics, _holm_step_thresholds(pvalues, rejected, cfg.alpha)))
     rejected_for = dict(zip(metrics, rejected))
 
-    # Pass 2: Holm owns the rejection decision, so each metric's audit is *told*
-    # whether it was rejected (``significant_for``) rather than re-deriving it. It
-    # still re-runs at the metric's Holm step threshold so its prose and the
-    # equivalence CI (which uses 1 - 2*alpha) are quoted against that threshold.
+    # Pass 2: each metric's audit is told whether Holm rejected it, and re-runs at
+    # its step threshold so the prose and equivalence CI quote that threshold.
     reports = _run_metrics(
         suite, model_a, model_b,
         lambda m: replace(cfg, alpha=alpha_for[m]),
@@ -233,22 +225,14 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
 
 
 def _holm_step_thresholds(pvalues, rejected, alpha: float) -> list[float]:
-    """Per-metric Holm step threshold — REPORTING context, not the decision.
+    """Per-metric Holm step threshold: reporting context, not the decision.
 
     A rejected metric's threshold is its own step ``alpha / (k - rank)``; a
-    retained metric takes the threshold of the first failure, ``alpha / (k - m)``
-    where ``m`` is the number rejected (the step-down stops there). Ties are
-    broken by input order (a stable sort), exactly as ``holm_bonferroni`` does,
-    so two metrics with an identical p-value can receive different step
-    thresholds — that is a genuine property of step-down Holm, not an artefact.
-
-    These thresholds are the ``alpha`` each metric's audit reports: they are
-    quoted in the decision prose and used for its TOST equivalence interval
-    (``1 - 2*alpha``). They no longer decide significance — the rejection comes
-    straight from ``holm_bonferroni`` and is carried into each metric's audit — so
-    there is no ``p < alpha`` vs ``adjusted_p <= alpha`` boundary to reconcile and
-    no ULP nudge: a p-value landing exactly on its step threshold is reported with
-    that threshold verbatim.
+    retained metric takes the first failure's threshold, ``alpha / (k - m)`` where
+    ``m`` is the number rejected. Ties break by input order, as in
+    ``holm_bonferroni``. These thresholds are the ``alpha`` each metric's audit
+    reports (quoted in prose and used for its TOST interval); they don't decide
+    significance, so a p-value on its step threshold is reported verbatim.
     """
     p = np.asarray(pvalues, dtype=float)
     k = p.size
