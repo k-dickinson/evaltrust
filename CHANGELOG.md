@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-09
+
 ### Added
 
 - `evaltrust --version` prints the installed version and exits.
@@ -32,6 +34,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Inspect (UK AISI) adapter:** read an Inspect `.json` eval log directly — model
   from `eval.model`, per-sample scorer grades (`C`/`I`/`P`/`N`) or numbers as the
   score. One model per log; compare two runs.
+- **OpenEvals adapter:** read a langchain-ai/openevals results list directly. One
+  model per run; compare two runs.
+- **HTML report** via `--html <path>`: a self-contained, dependency-free page.
+- **Markdown report** via `--md`, for PR comments and docs.
+- `win` and `loss` are recognised as pass/fail score words.
 
 ### Fixed
 
@@ -42,6 +49,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   models scored different example sets the effect size — and the PASS/WARN
   verdict it drives — could disagree with the significance test; both now use the
   same paired sample.
+- **`--json` output is always valid JSON.** Non-finite floats (an infinite
+  Cohen's d from a zero-variance gap, or an infinite signal-to-noise ratio) were
+  written as the non-standard `Infinity`/`NaN` tokens that strict parsers reject.
+  They now serialize as `null`.
+- **OpenEvals adapter is robust to bad data.** A row with a missing or unreadable
+  score is skipped and counted (reported as `skipped_rows`) instead of aborting
+  the whole file, and the example id no longer defaults to the free-text `input`,
+  which could merge two distinct evaluations into one.
+- **`--html` with a multi-metric suite no longer corrupts `--json` output.** The
+  "not supported for suites" warning now goes to stderr, so stdout stays valid
+  JSON.
 
 ### Changed
 
