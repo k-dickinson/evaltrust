@@ -74,6 +74,12 @@ class AuditConfig:
             _validate_weights(dict(self.metric_weights))
 
         if not isinstance(self.gated_metrics, frozenset):
+            if isinstance(self.gated_metrics, str):
+                raise ValueError(
+                    "gated_metrics must be a list or set of metric names, "
+                    f"got a bare string: {self.gated_metrics!r}. "
+                    "Did you mean [\"" + self.gated_metrics + "\"]?"
+                )
             object.__setattr__(self, "gated_metrics", frozenset(self.gated_metrics))
 
     def __hash__(self) -> int:
@@ -108,7 +114,14 @@ class AuditConfig:
         filtered = {k: v for k, v in data.items() if k in known}
 
         if "gated_metrics" in filtered:
-            filtered["gated_metrics"] = frozenset(filtered["gated_metrics"])
+            raw_gates = filtered["gated_metrics"]
+            if isinstance(raw_gates, str):
+                raise ValueError(
+                    "gated_metrics must be a list of metric names, "
+                    f"got a bare string: {raw_gates!r}. "
+                    "Did you mean [\"" + raw_gates + "\"]?"
+                )
+            filtered["gated_metrics"] = frozenset(raw_gates)
 
         if "metric_weights" in filtered:
             raw = dict(filtered["metric_weights"])

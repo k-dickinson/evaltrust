@@ -184,3 +184,16 @@ def test_dataclass_replace_preserves_immutability():
     # Still immutable
     with pytest.raises(TypeError):
         cfg2.metric_weights["new"] = 1.0  # type: ignore[index]
+
+
+def test_bare_string_gated_metrics_raises_value_error():
+    """gated_metrics = "safety" (missing brackets) must raise, not silently
+    produce frozenset({'s','a','f','e','t','y'})."""
+    with pytest.raises(ValueError, match="bare string"):
+        AuditConfig(gated_metrics="safety")
+
+
+def test_from_dict_bare_string_gated_metrics_raises_value_error():
+    """TOML typo: gated_metrics = "safety" instead of ["safety"] must raise."""
+    with pytest.raises(ValueError, match="bare string"):
+        AuditConfig.from_dict({"gated_metrics": "safety"})
