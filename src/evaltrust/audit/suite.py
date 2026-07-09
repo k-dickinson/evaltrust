@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 
 import numpy as np
 
@@ -32,17 +33,40 @@ class SuiteReport:
     correction: str
     metric_alphas: "OrderedDict[str, float]" = field(default_factory=OrderedDict)
     adjusted_p: "OrderedDict[str, float]" = field(default_factory=OrderedDict)
+    _config_gated: frozenset = field(default_factory=frozenset, compare=False, repr=False)
+    _config_weights: "dict | MappingProxyType" = field(
+        default_factory=dict, compare=False, repr=False)
 
     @property
     def overall_level(self) -> VerdictLevel:
-        """The worst verdict across metrics; the suite is only as trustworthy as
-        its weakest metric."""
-        return min((r.verdict.level for r in self.reports.values()),
-                   key=lambda lvl: _RANK[lvl])
+        """Roll up per-metric verdicts into one suite-level verdict.
+
+        Evaluation order (first matching rule wins):
+
+        1. **Gate check** — if any gated metric (``_config_gated``) is below
+           HIGH the whole suite is LOW, regardless of every other metric.
+        2. **Fallback** — plain weakest-metric (original behaviour).
+
+        Only named metrics present in the suite are considered; unknown gate
+        names are silently ignored.
+
+        Note: ``_config_weights`` is validated and stored but not yet used in
+        rollup — weighting changes the ``--fail-under`` contract and will land
+        in a follow-up PR once that contract is settled.
+        """
+        levels = {m: r.verdict.level for m, r in self.reports.items()}
+
+        # 1. Gated metrics: any gate failure → whole suite is LOW.
+        for metric, level in levels.items():
+            if metric in self._config_gated and level is not VerdictLevel.HIGH:
+                return VerdictLevel.LOW
+
+        # 2. Default: weakest metric wins.
+        return min(levels.values(), key=lambda lvl: _RANK[lvl])
 
     def raise_if_below(self, minimum: "str | VerdictLevel" = "moderate") -> "SuiteReport":
-        """Raise UntrustworthyError if the suite's overall (weakest) confidence is
-        below ``minimum``. Returns self so it can be chained."""
+        """Raise UntrustworthyError if the suite's overall confidence is below
+        ``minimum``. Returns self so it can be chained."""
         enforce_level(self.overall_level, minimum, context="the metric suite")
         return self
 
@@ -55,6 +79,10 @@ class SuiteReport:
             "metric_alphas": dict(self.metric_alphas),
             "adjusted_p": dict(self.adjusted_p),
             "metrics": {m: r.to_dict() for m, r in self.reports.items()},
+            # Surface the applied policy so downstream JSON consumers know which
+            # gates and weights produced this overall_level.
+            "applied_gates": sorted(self._config_gated),
+            "applied_weights": dict(self._config_weights),
         }
 
 
@@ -162,7 +190,8 @@ def _uncorrected_suite(suite, model_a, model_b, cfg, single: bool) -> SuiteRepor
     description = "none (single metric)" if single else "none (uncorrected)"
     return SuiteReport(reports=reports, alpha=cfg.alpha, corrected_alpha=cfg.alpha,
                        correction=description, metric_alphas=metric_alphas,
-                       adjusted_p=adjusted_p)
+                       adjusted_p=adjusted_p, _config_gated=cfg.gated_metrics,
+                       _config_weights=cfg.metric_weights)
 
 
 def _bonferroni_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
@@ -176,7 +205,9 @@ def _bonferroni_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
                   f"= {corrected_alpha:.4f}")
     return SuiteReport(reports=reports, alpha=cfg.alpha,
                        corrected_alpha=corrected_alpha, correction=description,
-                       metric_alphas=metric_alphas, adjusted_p=adjusted_p)
+                       metric_alphas=metric_alphas, adjusted_p=adjusted_p,
+                       _config_gated=cfg.gated_metrics,
+                       _config_weights=cfg.metric_weights)
 
 
 def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
@@ -207,7 +238,9 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
                   f"of {k} metrics significant")
     return SuiteReport(reports=reports, alpha=cfg.alpha,
                        corrected_alpha=corrected_alpha, correction=description,
-                       metric_alphas=metric_alphas, adjusted_p=adjusted_p)
+                       metric_alphas=metric_alphas, adjusted_p=adjusted_p,
+                       _config_gated=cfg.gated_metrics,
+                       _config_weights=cfg.metric_weights)
 
 
 def _holm_step_thresholds(pvalues, rejected, alpha: float) -> list[float]:
