@@ -133,6 +133,54 @@ def _bca_quantiles(
     return lo_adj, hi_adj
 
 
+def bootstrap_statistic_ci(
+    values: np.ndarray,
+    statistic,
+    confidence: float = 0.95,
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Percentile bootstrap CI for an arbitrary statistic of a paired sample.
+
+    Resamples the sample's indices with replacement ``n_resamples`` times and
+    applies ``statistic`` to the resampled matrix. ``statistic`` must accept a
+    2-D array of shape ``(n_resamples, n)`` — one bootstrap resample per row —
+    and return a 1-D array with the statistic for each row (i.e. it reduces the
+    last axis), the same vectorized contract ``scipy.stats.bootstrap`` uses. This
+    keeps the CI fast enough to run inside every audit.
+
+    Seeded and deterministic. Reused for Cohen's *d* on the paired differences
+    and for the paired risk difference (the mean) on pass/fail data.
+
+    Provided ``statistic`` itself never returns ``NaN`` — as the mean and
+    Cohen's *d* used here do not — the returned interval is never a silent
+    ``NaN``. When the statistic is merely non-finite on some resamples (Cohen's
+    *d* on a zero-variance resample is ``+/-inf``), a plain linear percentile
+    would interpolate ``inf - inf`` to ``NaN``, so the interval is read with a
+    non-interpolating percentile there instead, returning actual resample
+    estimates (finite or ``+/-inf``).
+    """
+    vals = np.asarray(values, dtype=float)
+    if vals.size == 0:
+        raise ValueError("bootstrap_statistic_ci requires at least one value")
+
+    rng = np.random.default_rng(seed)
+    n = vals.size
+    idx = rng.integers(0, n, size=(n_resamples, n))
+    estimates = np.asarray(statistic(vals[idx]), dtype=float)
+
+    alpha = 1.0 - confidence
+    lo_pct, hi_pct = 100 * (alpha / 2), 100 * (1 - alpha / 2)
+    if np.isfinite(estimates).all():
+        lo = float(np.percentile(estimates, lo_pct))
+        hi = float(np.percentile(estimates, hi_pct))
+    else:
+        # Avoid inf - inf interpolation: pick actual order statistics instead.
+        lo = float(np.percentile(estimates, lo_pct, method="lower"))
+        hi = float(np.percentile(estimates, hi_pct, method="higher"))
+    return lo, hi
+
+
 def permutation_test(
     differences: np.ndarray,
     n_resamples: int = 10_000,

@@ -30,6 +30,28 @@ def cohens_d_paired(differences: np.ndarray) -> float:
     return mean / sd
 
 
+def cohens_d_paired_along_rows(matrix: np.ndarray) -> np.ndarray:
+    """Cohen's d for each row of a 2-D array of paired differences.
+
+    A vectorized companion to :func:`cohens_d_paired`, used to compute Cohen's d
+    across many bootstrap resamples at once. Each row is reduced to
+    ``mean / sd(ddof=1)`` with the *same* degenerate handling as the scalar
+    version: zero spread yields ``0.0`` when the mean is 0, else ``+/-inf``
+    (the sign preserved). It never returns ``NaN``.
+    """
+    m = np.asarray(matrix, dtype=float)
+    mean = m.mean(axis=-1)
+    n = m.shape[-1]
+    sd = m.std(axis=-1, ddof=1) if n > 1 else np.zeros_like(mean)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        d = mean / sd
+        # Where the spread is zero, mirror cohens_d_paired: 0/0 -> 0.0, else
+        # +/-inf. (The 0*inf here is masked out by the outer where.)
+        degenerate = np.where(mean == 0.0, 0.0, np.sign(mean) * np.inf)
+        return np.where(sd == 0.0, degenerate, d)
+
+
 def cohens_h(p1: float, p2: float) -> float:
     """Cohen's h effect size between two proportions.
 

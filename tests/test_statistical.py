@@ -98,6 +98,52 @@ def test_binary_effect_size_uses_only_the_paired_sample():
     assert effect.status is Status.WARN
 
 
+def test_continuous_effect_size_reports_a_confidence_interval():
+    rng = np.random.default_rng(0)
+    a = rng.normal(0.5, 0.2, size=120)
+    b = a + rng.normal(0.4, 0.2, size=120)   # a clear, real positive effect
+    effect = by_check(
+        audit_statistical_validity(make_data(a, b), "A", "B", seed=0), "effect_size")
+    assert "ci_low" in effect.details and "ci_high" in effect.details
+    # The interval brackets the point estimate.
+    assert (effect.details["ci_low"] <= effect.details["cohens_d"]
+            <= effect.details["ci_high"])
+    assert "CI" in effect.how_detected
+
+
+def test_binary_effect_size_reports_a_risk_difference_interval():
+    a, b = [0] * 100, [1] * 80 + [0] * 20
+    effect = by_check(
+        audit_statistical_validity(make_data(a, b), "A", "B", seed=0), "effect_size")
+    assert "ci_low" in effect.details and "ci_high" in effect.details
+    # The interval is on the (paired) risk difference and brackets it.
+    assert (effect.details["ci_low"] <= effect.details["risk_difference"]
+            <= effect.details["ci_high"])
+    assert "CI" in effect.how_detected
+
+
+def test_effect_size_ci_does_not_change_the_pass_warn_rule():
+    # PASS/WARN stays driven by magnitude, not by whether the CI excludes 0.
+    big = by_check(audit_statistical_validity(
+        make_data([0] * 100, [1] * 80 + [0] * 20), "A", "B", seed=0), "effect_size")
+    assert big.details["magnitude"] in {"medium", "large"}
+    assert big.status is Status.PASS
+    # A tiny gap is a small effect -> WARN, even though its CI is reported.
+    a, b = [0] * 100, [1] * 3 + [0] * 97   # 3% vs 0% -> negligible
+    small = by_check(audit_statistical_validity(make_data(a, b), "A", "B", seed=0),
+                     "effect_size")
+    assert small.details["magnitude"] in {"negligible", "small"}
+    assert small.status is Status.WARN
+
+
+def test_effect_size_ci_is_deterministic():
+    data = make_data([0] * 100, [1] * 70 + [0] * 30)
+    e1 = by_check(audit_statistical_validity(data, "A", "B", seed=3), "effect_size")
+    e2 = by_check(audit_statistical_validity(data, "A", "B", seed=3), "effect_size")
+    assert e1.details["ci_low"] == e2.details["ci_low"]
+    assert e1.details["ci_high"] == e2.details["ci_high"]
+
+
 def test_tiny_symmetric_difference_is_equivalent_not_a_failure():
     # Continuous scores essentially identical (well within a 0.05 margin).
     rng = np.random.default_rng(0)

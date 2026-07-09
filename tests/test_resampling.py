@@ -9,7 +9,11 @@ import numpy as np
 import pytest
 from scipy import stats as sp
 
-from evaltrust.stats.resampling import bootstrap_ci, permutation_test
+from evaltrust.stats.resampling import (
+    bootstrap_ci,
+    bootstrap_statistic_ci,
+    permutation_test,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +167,92 @@ def test_bca_constant_nonzero_falls_back_without_nan():
 def test_bootstrap_ci_rejects_unknown_method():
     with pytest.raises(ValueError):
         bootstrap_ci(np.zeros(10), method="bogus")
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_statistic_ci: percentile CI for an arbitrary (vectorized) statistic
+# ---------------------------------------------------------------------------
+
+def _mean_axis(matrix):
+    return matrix.mean(axis=-1)
+
+
+def _cohens_d_reference(matrix, axis=-1):
+    # Independent reference for Cohen's d over rows (does NOT call the library).
+    m = np.asarray(matrix, dtype=float)
+    return m.mean(axis=axis) / m.std(axis=axis, ddof=1)
+
+
+def test_bootstrap_statistic_ci_mean_matches_scipy():
+    diffs = np.random.default_rng(11).normal(0.4, 1.2, size=300)
+    lo, hi = bootstrap_statistic_ci(diffs, _mean_axis, confidence=0.95,
+                                    n_resamples=9000, seed=7)
+    ref = sp.bootstrap(
+        (diffs,), np.mean, confidence_level=0.95, n_resamples=9000,
+        method="percentile", random_state=7,
+    )
+    assert lo == pytest.approx(ref.confidence_interval.low, abs=0.03)
+    assert hi == pytest.approx(ref.confidence_interval.high, abs=0.03)
+
+
+def test_bootstrap_statistic_ci_cohens_d_matches_scipy():
+    diffs = np.random.default_rng(12).normal(0.5, 1.0, size=200)
+    lo, hi = bootstrap_statistic_ci(diffs, _cohens_d_reference, confidence=0.95,
+                                    n_resamples=9000, seed=7)
+    ref = sp.bootstrap(
+        (diffs,), _cohens_d_reference, confidence_level=0.95, n_resamples=9000,
+        method="percentile", random_state=7, vectorized=True,
+    )
+    assert lo == pytest.approx(ref.confidence_interval.low, abs=0.03)
+    assert hi == pytest.approx(ref.confidence_interval.high, abs=0.03)
+
+
+def test_bootstrap_statistic_ci_of_mean_equals_bootstrap_ci():
+    # For the mean, the general CI must reduce to bootstrap_ci exactly (same
+    # seeded resampling scheme).
+    diffs = np.random.default_rng(1).normal(0.3, 1.0, size=150)
+    assert bootstrap_statistic_ci(diffs, _mean_axis, n_resamples=4000, seed=9) == \
+        bootstrap_ci(diffs, n_resamples=4000, seed=9)
+
+
+def test_bootstrap_statistic_ci_is_deterministic_for_fixed_seed():
+    diffs = np.random.default_rng(3).normal(0.2, 1.0, size=100)
+    a = bootstrap_statistic_ci(diffs, _mean_axis, n_resamples=3000, seed=42)
+    b = bootstrap_statistic_ci(diffs, _mean_axis, n_resamples=3000, seed=42)
+    assert a == b
+
+
+def test_bootstrap_statistic_ci_empty_raises():
+    with pytest.raises(ValueError):
+        bootstrap_statistic_ci(np.array([]), _mean_axis)
+
+
+def test_bootstrap_statistic_ci_degenerate_never_returns_nan():
+    from evaltrust.stats.effect import cohens_d_paired_along_rows
+    # Zero variance -> Cohen's d is +/-inf on every resample; percentile
+    # interpolation between infinities must NOT produce a silent NaN.
+    lo, hi = bootstrap_statistic_ci(np.full(20, 2.0), cohens_d_paired_along_rows,
+                                    n_resamples=1000, seed=0)
+    assert not np.isnan(lo) and not np.isnan(hi)
+    assert np.isinf(lo) and np.isinf(hi)
+    # All-zero differences -> Cohen's d is exactly 0.
+    assert bootstrap_statistic_ci(np.zeros(20), cohens_d_paired_along_rows,
+                                  n_resamples=1000, seed=0) == (0.0, 0.0)
+    # n == 1 -> a documented degenerate return, never a crash or NaN.
+    lo1, hi1 = bootstrap_statistic_ci(np.array([0.7]), _mean_axis,
+                                      n_resamples=500, seed=0)
+    assert (lo1, hi1) == (pytest.approx(0.7), pytest.approx(0.7))
+
+
+def test_bootstrap_statistic_ci_handles_both_signed_infinities():
+    from evaltrust.stats.effect import cohens_d_paired_along_rows
+    # Differences with both signs and small n: some resamples are all-identical
+    # positive (Cohen's d = +inf) and some all-identical negative (-inf). The
+    # non-interpolating guard must pick real order statistics, never inf - inf.
+    diffs = np.array([1.0, 1.0, -1.0, -1.0])
+    lo, hi = bootstrap_statistic_ci(diffs, cohens_d_paired_along_rows,
+                                    n_resamples=2000, seed=0)
+    assert not np.isnan(lo) and not np.isnan(hi)
 
 
 # ---------------------------------------------------------------------------

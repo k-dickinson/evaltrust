@@ -10,10 +10,15 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.schema import EvalData, Finding, Status
-from ..stats.effect import cohens_d_paired, cohens_h, magnitude_label
+from ..stats.effect import (
+    cohens_d_paired,
+    cohens_d_paired_along_rows,
+    cohens_h,
+    magnitude_label,
+)
 from ..stats.paired import mcnemar_exact
 from ..stats.power import minimum_detectable_effect, required_n
-from ..stats.resampling import bootstrap_ci, permutation_test
+from ..stats.resampling import bootstrap_ci, bootstrap_statistic_ci, permutation_test
 
 PILLAR = "Statistical Validity"
 
@@ -83,7 +88,8 @@ def audit_statistical_validity(
     return [
         _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
                   equivalence_margin, leader, trailer),
-        _effect_size(data, diffs, binary, leader, trailer),
+        _effect_size(data, diffs, binary, leader, trailer,
+                     confidence, n_resamples, seed),
         _precision(outcome, n, alpha, power_target, smallest_meaningful_effect),
     ]
 
@@ -152,7 +158,18 @@ def _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
     )
 
 
-def _effect_size(data, diffs, binary, leader, trailer) -> Finding:
+def _fmt_bound(x: float) -> str:
+    """Format a Cohen's d CI bound, keeping infinities readable."""
+    if np.isposinf(x):
+        return "+inf"
+    if np.isneginf(x):
+        return "-inf"
+    return f"{x:+.3f}"
+
+
+def _effect_size(data, diffs, binary, leader, trailer,
+                 confidence=0.95, n_resamples=10_000, seed=0) -> Finding:
+    conf_pct = round(confidence * 100)
     if binary:
         # Pass rates come from the paired sample (the same examples McNemar and
         # the CI use), so the effect size is computed on the same data as the test.
@@ -162,18 +179,29 @@ def _effect_size(data, diffs, binary, leader, trailer) -> Finding:
         rd = p_leader - p_trailer
         h = cohens_h(p_leader, p_trailer)
         magnitude = magnitude_label(h)
+        # CI on the paired risk difference (the mean of the paired differences).
+        rd_lo, rd_hi = bootstrap_statistic_ci(
+            diffs, lambda m: m.mean(axis=-1),
+            confidence=confidence, n_resamples=n_resamples, seed=seed)
         how = (f"{leader} passed {p_leader:.1%} vs {trailer}'s {p_trailer:.1%}, a "
-               f"{rd * 100:+.1f} point gap (Cohen's h {h:+.3f}, {magnitude}).")
+               f"{rd * 100:+.1f} point gap ({conf_pct}% CI "
+               f"[{rd_lo * 100:+.1f}, {rd_hi * 100:+.1f}] pts; "
+               f"Cohen's h {h:+.3f}, {magnitude}).")
         details = {"check": "effect_size", "risk_difference": rd,
-                   "cohens_h": h, "magnitude": magnitude}
+                   "cohens_h": h, "magnitude": magnitude,
+                   "ci_low": rd_lo, "ci_high": rd_hi}
     else:
         d = cohens_d_paired(diffs)
         magnitude = magnitude_label(d)
+        d_lo, d_hi = bootstrap_statistic_ci(
+            diffs, cohens_d_paired_along_rows,
+            confidence=confidence, n_resamples=n_resamples, seed=seed)
         d_str = "infinite" if np.isinf(d) else f"{d:+.3f}"
-        how = (f"Cohen's d on the paired differences was {d_str}, "
+        how = (f"Cohen's d on the paired differences was {d_str} "
+               f"({conf_pct}% CI [{_fmt_bound(d_lo)}, {_fmt_bound(d_hi)}]), "
                f"a {magnitude} effect by conventional thresholds.")
         details = {"check": "effect_size", "cohens_d": float(d),
-                   "magnitude": magnitude}
+                   "magnitude": magnitude, "ci_low": d_lo, "ci_high": d_hi}
 
     meaningful = magnitude in {"medium", "large"}
     return Finding(
