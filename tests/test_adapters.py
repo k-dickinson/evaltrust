@@ -227,3 +227,170 @@ def test_openevals_auto_detected_by_registry():
     from evaltrust.adapters.registry import detect_adapter
     adapter = detect_adapter(OPENEVALS_SAMPLE)
     assert adapter.source_format == "openevals"
+
+
+# ---------------------------------------------------------------------------
+# Inspect (UK AISI) .json eval logs
+# ---------------------------------------------------------------------------
+
+import json
+from pathlib import Path
+
+from evaltrust.adapters.inspect_ai import InspectAdapter
+
+_TESTS_DIR = Path(__file__).parent
+_REPO_ROOT = _TESTS_DIR.parent
+
+
+def _load(path):
+    return json.loads(Path(path).read_text())
+
+
+# A minimal Inspect log, matching the shape of tests/fixtures/inspect_log.json.
+INSPECT = {
+    "version": 2,
+    "status": "success",
+    "eval": {"eval_id": "e1", "run_id": "r1", "task": "popularity",
+             "model": "openai/gpt-4o-mini"},
+    "samples": [
+        {"id": 1, "epoch": 1, "scores": {"match": {"value": "C"}}},
+        {"id": 2, "epoch": 1, "scores": {"match": {"value": "I"}}},
+        {"id": 3, "epoch": 1, "scores": {"match": {"value": "C"}}},
+    ],
+}
+
+
+def test_inspect_detects_and_parses_the_real_fixture():
+    raw = _load(_TESTS_DIR / "fixtures" / "inspect_log.json")
+    a = InspectAdapter()
+    assert a.detect(raw)
+    data = a.parse(raw)
+    assert data.source_format == "inspect"
+    assert data.models == ["openai/gpt-4o-mini"]     # model comes from eval.model
+    assert data.n_examples == 3
+    assert data.examples[0].scores == {"openai/gpt-4o-mini": 1.0}   # "C" -> 1.0
+    assert data.examples[1].scores == {"openai/gpt-4o-mini": 0.0}   # "I" -> 0.0
+
+
+def test_inspect_grade_values_map_like_value_to_float():
+    # CORRECT="C"->1, INCORRECT="I"->0, PARTIAL="P"->0.5, NOANSWER="N"->0
+    raw = {"eval": {"eval_id": "e", "task": "t", "model": "m"},
+           "samples": [
+               {"id": "a", "scores": {"s": {"value": "C"}}},
+               {"id": "b", "scores": {"s": {"value": "I"}}},
+               {"id": "c", "scores": {"s": {"value": "P"}}},
+               {"id": "d", "scores": {"s": {"value": "N"}}},
+           ]}
+    data = InspectAdapter().parse(raw)
+    got = [ex.scores["m"] for ex in data.examples]
+    assert got == [1.0, 0.0, 0.5, 0.0]
+
+
+def test_inspect_numeric_and_boolean_values():
+    raw = {"eval": {"eval_id": "e", "task": "t", "model": "m"},
+           "samples": [
+               {"id": "a", "scores": {"s": {"value": 0.75}}},
+               {"id": "b", "scores": {"s": {"value": True}}},
+               {"id": "c", "scores": {"s": {"value": "yes"}}},
+           ]}
+    got = [ex.scores["m"] for ex in InspectAdapter().parse(raw).examples]
+    assert got == [0.75, 1.0, 1.0]
+
+
+def test_inspect_multiple_scorers_use_the_first_like_openevals():
+    # A dedicated adapter yields a single-metric EvalData (the suite fan-out is
+    # only for the generic record path), so, as with the OpenEvals adapter, the
+    # first scorer becomes the audited metric.
+    raw = {"eval": {"eval_id": "e", "task": "t", "model": "m"},
+           "samples": [
+               {"id": "a", "scores": {"match": {"value": "C"},
+                                      "includes": {"value": "I"}}},
+           ]}
+    data = InspectAdapter().parse(raw)
+    assert data.examples[0].scores == {"m": 1.0}     # "match" (first scorer) -> C -> 1.0
+
+
+def test_inspect_skips_unscored_values_and_counts_them():
+    # A null / non-scalar value, or a malformed (unwrapped) Score entry, is
+    # skipped like the CSV path -- not fatal -- and every one is counted.
+    raw = {"eval": {"eval_id": "e", "task": "t", "model": "m"},
+           "samples": [
+               {"id": 1, "scores": {"s": {"value": "C"}}},
+               {"id": 2, "scores": {"s": {"value": None, "explanation": "error"}}},
+               {"id": 3, "scores": {"s": {"value": ["a", "b"]}}},
+               {"id": 4, "scores": {"s": "C"}},           # not a {"value": ...} Score
+               {"id": 5, "scores": {"s": {"value": "I"}}},
+           ]}
+    data = InspectAdapter().parse(raw)
+    assert data.n_examples == 2                      # only ids 1 and 5 scored
+    assert data.metadata["skipped_rows"] == 3        # null + list + malformed, counted
+
+
+def test_inspect_detect_requires_a_score_shaped_value():
+    # detect() must stay in step with parse(): an empty scores map, or scores
+    # keyed model->number (a native record misplaced under "samples"), is not an
+    # Inspect log and must not be claimed then rejected.
+    a = InspectAdapter()
+    assert not a.detect({"eval": {"eval_id": "e", "model": "m"},
+                         "samples": [{"id": 1, "scores": {}}]})
+    native_under_samples = {"eval": {"model": "m"},
+                            "samples": [{"id": 1, "scores": {"m": 0.9}}]}
+    assert not a.detect(native_under_samples)
+
+
+def test_inspect_epochs_become_repeated_runs():
+    # Inspect epochs re-run the same sample; repeated (id, model) records become
+    # that example's runs (which unlocks the Repeatability check).
+    raw = {"eval": {"eval_id": "e", "task": "t", "model": "m"},
+           "samples": [
+               {"id": 1, "epoch": 1, "scores": {"s": {"value": "C"}}},
+               {"id": 1, "epoch": 2, "scores": {"s": {"value": "I"}}},
+           ]}
+    data = InspectAdapter().parse(raw)
+    assert data.n_examples == 1
+    assert data.examples[0].runs == {"m": [1.0, 0.0]}
+    assert data.examples[0].scores["m"] == 0.5       # mean of the two epochs
+
+
+def test_inspect_routed_by_registry_before_the_generic_fallback():
+    # A generic record adapter would grab the "samples" list; the specific
+    # Inspect adapter must win.
+    assert detect_adapter(INSPECT).source_format == "inspect"
+    assert GenericRecordsAdapter().detect(INSPECT)   # generic *would* have claimed it
+
+
+def test_generic_records_under_eval_samples_still_route_to_generic():
+    # A plain record list nested under eval/samples but WITHOUT Inspect's
+    # fingerprint (no eval_id, flat `score` not a `scores` map) must not be
+    # hijacked by the Inspect adapter -- it should still parse as generic.
+    raw = {"eval": {"model": "gpt-4", "task": "smoke"},
+           "samples": [{"id": 1, "model": "gpt-4", "score": 0.9},
+                       {"id": 2, "model": "gpt-4", "score": 0.4}]}
+    assert not InspectAdapter().detect(raw)
+    assert detect_adapter(raw).source_format == "generic"
+
+
+def test_no_earlier_adapter_claims_an_inspect_log():
+    raw = _load(_TESTS_DIR / "fixtures" / "inspect_log.json")
+    assert not PromptfooAdapter().detect(raw)
+    assert not DeepEvalAdapter().detect(raw)
+    assert not OpenEvalsAdapter().detect(raw)
+    assert not NativeNestedAdapter().detect(raw)
+
+
+def test_inspect_does_not_false_positive_on_any_existing_fixture():
+    a = InspectAdapter()
+    # In-code fixtures from the rest of this module.
+    for other in (PROMPTFOO, NATIVE, LONG, WIDE, DEEPEVAL_SNAKE, DEEPEVAL_CAMEL,
+                  OPENEVALS_SAMPLE):
+        assert not a.detect(other), other
+    # Every JSON fixture shipped in tests/fixtures and examples/.
+    files = list((_TESTS_DIR / "fixtures").glob("*.json")) + \
+        list((_REPO_ROOT / "examples").glob("*.json"))
+    for f in files:
+        raw = _load(f)
+        detected = a.detect(raw)
+        if f.name == "inspect_log.json":
+            assert detected, f.name          # our own fixture must detect
+        else:
+            assert not detected, f.name      # nothing else may

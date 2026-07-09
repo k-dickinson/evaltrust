@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "status": "success",
+  "eval": {
+    "eval_id": "J7kQ2exampleEvalId",
+    "run_id": "run-example-0001",
+    "created": "2025-05-12T20:28:13-04:00",
+    "task": "popularity",
+    "task_id": "task-example-0001",
+    "task_version": 0,
+    "model": "openai/gpt-4o-mini",
+    "dataset": {"name": "example", "samples": 3}
+  },
+  "plan": {"name": "plan"},
+  "results": {"total_samples": 3, "completed_samples": 3},
+  "stats": {
+    "started_at": "2025-05-12T20:28:00-04:00",
+    "completed_at": "2025-05-12T20:28:13-04:00"
+  },
+  "samples": [
+    {"id": 1, "epoch": 1, "target": "Yes",
+     "scores": {"match": {"value": "C", "answer": "Yes", "explanation": "Yes"}}},
+    {"id": 2, "epoch": 1, "target": "No",
+     "scores": {"match": {"value": "I", "answer": "Yes", "explanation": "Yes"}}},
+    {"id": 3, "epoch": 1, "target": "Yes",
+     "scores": {"match": {"value": "C", "answer": "Yes", "explanation": "Yes"}}}
+  ]
+}

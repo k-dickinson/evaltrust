@@ -12,6 +12,7 @@ from typing import Protocol
 from ..core.schema import EvalData
 from .deepeval import DeepEvalAdapter
 from .generic import GenericRecordsAdapter, NativeNestedAdapter
+from .inspect_ai import InspectAdapter
 from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
 
@@ -27,11 +28,14 @@ class UnknownFormatError(ValueError):
     """Raised when no adapter recognises the input."""
 
 
-# Order matters: specific formats before generic fallbacks.
+# Order matters: specific formats before generic fallbacks. In particular the
+# Inspect adapter must precede GenericRecordsAdapter, which would otherwise claim
+# an Inspect log via its "samples" record list.
 REGISTRY: list[Adapter] = [
     PromptfooAdapter(),
     DeepEvalAdapter(),
     OpenEvalsAdapter(),
+    InspectAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]

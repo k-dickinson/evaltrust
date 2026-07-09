@@ -29,6 +29,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   runs now reports how stable the score is across reruns (the standard deviation
   of the per-run mean score), under the Repeatability pillar. It degrades to a
   SKIP when the file has no repeated runs.
+- **Inspect (UK AISI) adapter:** read an Inspect `.json` eval log directly — model
+  from `eval.model`, per-sample scorer grades (`C`/`I`/`P`/`N`) or numbers as the
+  score. One model per log; compare two runs.
 
 ### Fixed
 

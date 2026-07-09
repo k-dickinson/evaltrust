@@ -33,6 +33,22 @@ evaltrust audit deepeval_gpt4.json deepeval_claude.json
 If DeepEval recorded a model name under `hyperparameters`, it's used as the label;
 otherwise the file name supplies it.
 
+### Inspect (UK AISI)
+
+Inspect writes one `EvalLog` per run as a single JSON document. EvalTrust reads
+the `.json` log format directly: the model comes from `eval.model`, each entry in
+`samples` becomes an example, and the scorer's grade under `sample.scores` becomes
+the score. Inspect's grade constants map the way Inspect's own `value_to_float`
+maps them — `C`/`I`/`P`/`N` → 1 / 0 / 0.5 / 0 — and numeric scores pass through.
+An Inspect log holds a single model, so compare two runs:
+
+```bash
+evaltrust audit inspect_run_a.json inspect_run_b.json
+```
+
+A log with several scorers is audited on its first scorer (as with OpenEvals);
+per-scorer multi-metric support is a possible follow-up.
+
 ### Nested JSON
 
 A structured object with a list of examples, each carrying per-model scores:
@@ -129,8 +145,8 @@ without a `metric` column is treated as a single metric, exactly as before. See
 
 ## Single-model tools (two-file comparison)
 
-Some tools — DeepEval, LangSmith, OpenEvals — evaluate one model per run, so a
-single export contains only one model. Run each model, then pass both files:
+Some tools — DeepEval, LangSmith, OpenEvals, Inspect — evaluate one model per run,
+so a single export contains only one model. Run each model, then pass both files:
 
 ```bash
 evaltrust audit gpt4_run.json claude_run.json
