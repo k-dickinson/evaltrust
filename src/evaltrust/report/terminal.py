@@ -302,3 +302,93 @@ def render_plain(report: AuditReport, explain: bool = False) -> str:
                           f"    {f.why}", f"    {f.how_detected}"]
 
     return ("\n".join(lines).rstrip() + "\n").translate(_ASCII)
+
+
+# --------------------------------------------------------------------------- #
+# Markdown rendering (PR comments / docs)
+# --------------------------------------------------------------------------- #
+
+_MD_MARK = {Status.PASS: "pass", Status.WARN: "warn",
+            Status.FAIL: "fail", Status.SKIP: "skip"}
+
+
+def render_markdown(report: AuditReport, explain: bool = False) -> str:
+    """Render the report as Markdown — suitable for PR comments and docs."""
+    v = report.verdict
+    lines = [f"# EvalTrust", "", f"**{_subtitle(report)}**", ""]
+    others = _others(report)
+    if others:
+        lines.append(
+            f"_Comparing the two strongest of {len(report.models_available)}; "
+            f"others: {', '.join(others)}_"
+        )
+        lines.append("")
+    lines += [f"## {v.level.value}", "", v.summary, ""]
+
+    for pillar, items in _grouped(report.findings).items():
+        lines.append(f"### {pillar}")
+        lines.append("")
+        for f in items:
+            lines.append(f"- **[{_MD_MARK[f.status]}]** {f.title}")
+        lines.append("")
+
+    todo = [f.how_to_fix for f in report.findings
+            if f.status in (Status.WARN, Status.FAIL)]
+    if todo:
+        lines += ["## What to do", ""] + [f"- {x}" for x in todo] + [""]
+
+    optional = [f.how_to_fix for f in report.findings if f.status is Status.SKIP]
+    if optional:
+        lines += ["## To check more", ""] + [f"- {x}" for x in optional] + [""]
+
+    if explain:
+        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        if flagged:
+            lines += ["## Detail", ""]
+            for f in flagged:
+                lines += [f"### [{_MD_MARK[f.status]}] {f.title}", "",
+                          f"{f.why}", "", f"{f.how_detected}", ""]
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_suite_markdown(suite, explain: bool = False) -> str:
+    """Render a multi-metric suite as Markdown."""
+    a, b, n, k = _suite_header(suite)
+    lines = [
+        "# EvalTrust",
+        "",
+        f"**{a} vs {b} · {n} examples · {k} metrics**",
+        "",
+    ]
+    if suite.corrected_alpha != suite.alpha:
+        lines += [
+            f"_Significance corrected for {k} metrics ({suite.correction})_",
+            "",
+        ]
+    lines += [
+        f"## {suite.overall_level.value}",
+        "",
+        f"Weakest of {k} metrics.",
+        "",
+        "| Metric | Level | Outcome |",
+        "| --- | --- | --- |",
+    ]
+    for metric, report in suite.reports.items():
+        outcome = _OUTCOME.get(_metric_outcome(report), (_metric_outcome(report), ""))[0]
+        level = report.verdict.level.value
+        lines.append(f"| {metric} | {level} | {outcome} |")
+    lines.append("")
+
+    if explain:
+        for metric, report in suite.reports.items():
+            nested = render_markdown(report, explain=True)
+            nested_lines = nested.splitlines()
+            # Drop the outer H1 from nested to avoid multiple top-level titles
+            if nested_lines and nested_lines[0].startswith("# "):
+                nested_lines = nested_lines[1:]
+            while nested_lines and nested_lines[0] == "":
+                nested_lines = nested_lines[1:]
+            lines += [f"## {metric}", ""] + nested_lines + [""]
+
+    return "\n".join(lines).rstrip() + "\n"

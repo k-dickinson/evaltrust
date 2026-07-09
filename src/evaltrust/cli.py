@@ -33,7 +33,9 @@ from .report.terminal import (
     print_report,
     print_suite,
     render_diff_plain,
+    render_markdown,
     render_plain,
+    render_suite_markdown,
     render_suite_plain,
 )
 
@@ -105,6 +107,8 @@ def audit(
         None, "--html", help="Write the audit as a standalone HTML file to this path."),
     plain: bool = typer.Option(
         False, "--plain", help="Plain ASCII output (no colour or Unicode)."),
+    md: bool = typer.Option(
+        False, "--md", help="Emit the audit as Markdown (for PR comments and docs)."),
     explain: bool = typer.Option(
         False, "--explain", help="Also show why each flag matters and how it was measured."),
 ) -> None:
@@ -160,6 +164,8 @@ def audit(
     if suite_report is not None:
         if as_json:
             typer.echo(json.dumps(suite_report.to_dict(), indent=2))
+        elif md:
+            typer.echo(render_suite_markdown(suite_report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_suite_plain(suite_report, explain=explain), nl=False)
         else:
@@ -168,6 +174,8 @@ def audit(
     else:
         if as_json:
             typer.echo(json.dumps(report.to_dict(), indent=2))
+        elif md:
+            typer.echo(render_markdown(report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_plain(report, explain=explain), nl=False)
         else:
