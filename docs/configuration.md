@@ -22,6 +22,7 @@ Drop this in your repo and every audit uses it:
 alpha = 0.01                     # stricter significance than the 0.05 default
 equivalence_margin = 0.02        # what counts as "no real difference", in score units
 judge_agreement_threshold = 0.9  # require 90% inter-judge agreement to pass
+suite_correction = "holm"        # bonferroni, holm, or none
 ```
 
 Or the same under `pyproject.toml`:
@@ -45,6 +46,7 @@ saturation_fraction = 0.9
 | `min_spread` | `0.01` | Pooled score std below which the benchmark can't discriminate. |
 | `judge_agreement_threshold` | `0.8` | Inter-judge agreement (and judge-vs-gold) required to pass. |
 | `reference_judge` | *(auto)* | Name of the human/gold judge to calibrate against (else auto-detected). |
+| `suite_correction` | `"bonferroni"` | Multiple-metric correction: `bonferroni`, `holm`, or `none`. |
 | `n_resamples` | `10000` | Bootstrap / permutation resamples. |
 | `seed` | `0` | RNG seed (reproducibility). |
 

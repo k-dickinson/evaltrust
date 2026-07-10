@@ -12,6 +12,7 @@ def test_defaults_match_the_documented_values():
     assert c.equivalence_margin == 0.05
     assert c.saturation_fraction == 0.95
     assert c.judge_agreement_threshold == 0.8
+    assert c.suite_correction == "bonferroni"
 
 
 def test_from_dict_ignores_unknown_keys():
@@ -21,11 +22,13 @@ def test_from_dict_ignores_unknown_keys():
 
 def test_load_reads_a_dedicated_toml(tmp_path):
     (tmp_path / ".evaltrust.toml").write_text(
-        "alpha = 0.01\nequivalence_margin = 0.1\njudge_agreement_threshold = 0.9\n")
+        "alpha = 0.01\nequivalence_margin = 0.1\n"
+        "judge_agreement_threshold = 0.9\nsuite_correction = \"holm\"\n")
     c = AuditConfig.load(start_dir=str(tmp_path))
     assert c.alpha == 0.01
     assert c.equivalence_margin == 0.1
     assert c.judge_agreement_threshold == 0.9
+    assert c.suite_correction == "holm"
 
 
 def test_load_reads_pyproject_tool_table(tmp_path):

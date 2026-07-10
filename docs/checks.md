@@ -153,10 +153,34 @@ everything above, comparing the same two models throughout, and rolls the result
 into one suite report.
 
 Testing many metrics at once inflates false positives — run 20 metrics at
-`alpha = 0.05` and one will look "significant" by luck. EvalTrust corrects for this
-with **Bonferroni**: it divides the significance threshold by the number of
-metrics, so a metric is only called a real improvement if it clears the stricter
-bar. The suite's overall confidence is the **weakest** of its metrics.
+`alpha = 0.05` and one will look "significant" by luck. EvalTrust corrects for
+this with **Bonferroni** by default: it divides the significance threshold by the
+number of metrics, so a metric is only called a real improvement if it clears the
+stricter bar. You can choose the step-down **Holm-Bonferroni** correction with
+`--suite-correction holm`, or set `suite_correction = "holm"` in config. The
+suite's overall confidence is the **weakest** of its metrics.
+
+Holm rejects at least as many metrics as Bonferroni and never fewer, at the same
+family-wise error rate. It sorts the metrics by p-value and tests them against
+progressively looser thresholds — `alpha/k`, `alpha/(k-1)`, … , `alpha` — stopping
+at the first metric that fails. Every metric after that one is retained, *even if
+its own p-value clears its own threshold*. That step-down rule is why Holm reports
+a different alpha per metric.
+
+Whichever correction runs, each metric is audited once at the alpha that
+correction assigned it. The corrected alpha reaches every check, not just the
+significance test: the equivalence interval and the minimum detectable effect are
+computed against it too. A metric that loses significance under correction can
+therefore still come out **equivalent** — correction removes a claim of
+improvement, it does not manufacture a claim of missing data.
+
+Passing `--suite-correction none` disables correction entirely. The report says so
+in as many words; a suite run without correction never looks like a corrected one.
+
+In `--json`, `correction_method` is the stable identifier (`bonferroni`, `holm`,
+`none`) to branch on; `correction` is a human-readable sentence whose wording may
+change. `corrected_alpha_by_metric` gives the threshold each metric was judged
+against, and `corrected_alpha` is the strictest of those.
 
 ## The verdict
 
@@ -178,8 +202,9 @@ current release assumes:
   Unpaired comparisons (different test sets) are out of scope.
 - **Two models per comparison.** A comparison is between two models. A single
   model is supported too (Score Reliability, above). Multi-metric suites *are*
-  supported (a `metric` column, Bonferroni-corrected), but when a file has more
-  than two *models*, the two strongest by mean are compared rather than every pair.
+  supported (a `metric` column, with Bonferroni or Holm-Bonferroni correction),
+  but when a file has more than two *models*, the two strongest by mean are
+  compared rather than every pair.
 - **Scalar scores.** Each score is a number. Pairwise-preference judgments
   (A-beats-B votes) are not yet modelled.
 - **Opinionated thresholds.** `alpha` and the equivalence margin are configurable;

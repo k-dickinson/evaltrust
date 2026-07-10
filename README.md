@@ -171,11 +171,13 @@ Useful flags:
 | Flag | Effect |
 |------|--------|
 | `--json` | Emit the full audit as JSON, for CI logic and experiment trackers. |
+| `--md` | Emit the audit as Markdown, for PR comments and docs. |
 | `--plain` | Plain ASCII output — safe for Windows terminals, CI logs, and piping to a file. |
 | `--explain` | Show why each flag matters and the numbers behind it. |
 | `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) — gate CI. |
 | `--threshold` | For a single-model eval, the target score to test against (e.g. `0.8`). |
 | `--reference-judge` | Name the human/gold judge to calibrate the AI judges against. |
+| `--suite-correction` | Multiple-metric correction (`bonferroni`, `holm`, or `none`). |
 | `--config` | Path to a config TOML (defaults to `.evaltrust.toml` / `pyproject`). |
 | `--model-a`, `--model-b` | Choose which two models to compare, or label the two files. |
 | `--alpha`, `--equivalence-margin`, `--seed` | Statistical knobs (all also settable in config). |
@@ -243,8 +245,9 @@ judges) don't guess when it's missing; they tell you how to generate it.
 
 Scoring several metrics per example (correctness, safety, tone…)? Add a `metric`
 column and EvalTrust audits each one, corrects the significance threshold for the
-number of metrics (so you don't get false wins by testing many), and reports the
-suite's confidence as its weakest metric.
+number of metrics (Bonferroni by default, or Holm-Bonferroni with
+`--suite-correction holm`), and reports the suite's confidence as its weakest
+metric.
 
 **Only evaluated one model?** Point it at a single model's scores and EvalTrust
 switches to asking *can I trust this number?* — it puts a confidence interval

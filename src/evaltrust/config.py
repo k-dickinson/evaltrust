@@ -28,6 +28,7 @@ class AuditConfig:
     min_spread: float = 0.01                # pooled std below which no discrimination
     judge_agreement_threshold: float = 0.8  # inter-judge agreement to pass
     reference_judge: str | None = None      # judge treated as ground truth (else auto)
+    suite_correction: str = "bonferroni"    # bonferroni, holm, or none
     n_resamples: int = 10_000               # bootstrap / permutation resamples
     seed: int = 0                           # RNG seed (reproducibility)
 

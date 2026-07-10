@@ -66,14 +66,19 @@ def audit_suite(
     alpha: float = 0.05,
     equivalence_margin: float = 0.05,
     seed: int = 0,
+    correction: str | None = None,
 ) -> SuiteReport:
     """Audit a multi-metric suite and return a :class:`SuiteReport`.
 
     ``source`` is a path to a file with a ``metric`` column, or a ready-made
     ``{metric: EvalData}`` mapping. Every metric is audited for the same model
-    pair, with the significance threshold Bonferroni-corrected for the number of
-    metrics.
+    pair, with the significance threshold corrected for the number of metrics.
+
+    ``correction`` is ``"bonferroni"``, ``"holm"``, or ``"none"``; when omitted
+    it falls back to :class:`AuditConfig`'s default so the default lives in one
+    place.
     """
     suite = load_suite(source) if isinstance(source, str) else source
     return _audit_suite(suite, model_a=model_a, model_b=model_b, alpha=alpha,
-                        equivalence_margin=equivalence_margin, seed=seed)
+                        equivalence_margin=equivalence_margin, seed=seed,
+                        correction=correction)

@@ -40,13 +40,13 @@ your eval output
 | `core/ingest.py` | Read a file from disk; route JSON through auto-detection and CSV through the record reader. |
 | `core/pairing.py` | Pair two single-model files into one A-vs-B comparison. |
 | `adapters/` | Detect a format (Promptfoo, DeepEval, nested JSON, records, CSV) and map it into the canonical model. |
-| `stats/` | Pure statistical primitives (resampling, effect size, power, McNemar, agreement). No knowledge of findings or formatting. |
+| `stats/` | Pure statistical primitives (resampling, effect size, power, McNemar, agreement, multiple-comparison correction). No knowledge of findings or formatting. |
 | `audit/` | The checks and the runner. Comparison (`statistical`), single-model (`single`), suites (`suite`), `benchmark_health`, `repeatability`, `judge_reliability`, `judge_calibration`, and the `verdict` rules. |
 | `config.py` | `AuditConfig` — every threshold in one place, loadable from `.evaltrust.toml`. |
 | `diff.py` | Compare two saved audits to flag regressions. |
-| `report/terminal.py` | Render a report to the terminal (`rich`) or as plain ASCII. |
+| `report/terminal.py` | Render a report to the terminal (`rich`), plain ASCII, or Markdown. |
 | `api.py` | The public `evaltrust.audit(...)` / `audit_suite(...)` entry points. |
-| `cli.py` | The `evaltrust audit` and `evaltrust diff` commands (`--json`, `--plain`, `--explain`). |
+| `cli.py` | The `evaltrust audit` and `evaltrust diff` commands (`--json`, `--md`, `--plain`, `--explain`). |
 
 ## Design principles
 

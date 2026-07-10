@@ -228,6 +228,15 @@ def test_plain_output_is_ascii_only(tmp_path):
     assert "╭" not in result.stdout
 
 
+def test_markdown_output_contains_verdict_and_findings(tmp_path):
+    result = runner.invoke(app, ["audit", noise_file(tmp_path), "--md"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("# EvalTrust")
+    assert "## Low Confidence" in result.stdout
+    assert "### Statistical Validity" in result.stdout
+    assert "inconclusive" in result.stdout.lower()
+
+
 def multi_metric_file(tmp_path):
     lines = ["id,model,metric,score"]
     for i in range(80):
@@ -254,6 +263,38 @@ def test_multi_metric_json_has_per_metric_results(tmp_path):
     payload = _json.loads(result.stdout)
     assert set(payload["metrics"].keys()) == {"correctness", "tone"}
     assert "corrected_alpha" in payload
+
+
+def test_multi_metric_json_can_use_holm_correction(tmp_path):
+    import json as _json
+    result = runner.invoke(
+        app, ["audit", multi_metric_file(tmp_path), "--json",
+              "--suite-correction", "holm"])
+    payload = _json.loads(result.stdout)
+    assert result.exit_code == 0
+    assert payload["correction_method"] == "holm"
+    assert set(payload["corrected_alpha_by_metric"]) == set(payload["metrics"])
+
+
+def test_multi_metric_disabled_correction_is_visible_in_the_report(tmp_path):
+    result = runner.invoke(
+        app, ["audit", multi_metric_file(tmp_path), "--plain",
+              "--suite-correction", "none"])
+    assert result.exit_code == 0
+    assert "no multiple-comparison correction applied" in result.stdout
+
+
+def test_unknown_suite_correction_exits_cleanly(tmp_path):
+    result = runner.invoke(
+        app, ["audit", multi_metric_file(tmp_path), "--suite-correction", "banana"])
+    assert result.exit_code == 2
+
+
+def test_multi_metric_markdown_has_metric_table(tmp_path):
+    result = runner.invoke(app, ["audit", multi_metric_file(tmp_path), "--md"])
+    assert result.exit_code == 0
+    assert "| Metric | Confidence | Outcome |" in result.stdout
+    assert "correctness" in result.stdout and "tone" in result.stdout
 
 
 def test_explain_flag_adds_detail(tmp_path):

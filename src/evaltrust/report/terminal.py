@@ -151,14 +151,27 @@ def _suite_header(suite):
     return (first.model_a, first.model_b, first.n_examples, len(suite.reports))
 
 
+def _suite_correction_line(suite, k: int) -> str | None:
+    """One line on how significance was corrected — including when it wasn't.
+
+    Silence would be the wrong default: a suite run with the correction turned
+    off must not look like a corrected one.
+    """
+    if suite.correction_method == "none":
+        if k == 1:
+            return None
+        return f"no multiple-comparison correction applied across {k} metrics"
+    return f"significance corrected for {k} metrics ({suite.correction})"
+
+
 def _suite_renderable(suite, explain: bool = False) -> Text:
     a, b, n, k = _suite_header(suite)
     t = Text()
     t.append("EvalTrust  ", style="bold")
     t.append(f"{a} vs {b} · {n} examples · {k} metrics\n", style="dim")
-    if suite.corrected_alpha != suite.alpha:
-        t.append(f"significance corrected for {k} metrics "
-                 f"({suite.correction})\n", style="dim")
+    line = _suite_correction_line(suite, k)
+    if line:
+        t.append(f"{line}\n", style="dim")
 
     lvl = suite.overall_level
     t.append("\n● ", style=_DOT[lvl])
@@ -196,8 +209,9 @@ def print_suite(suite, explain: bool = False) -> None:
 def render_suite_plain(suite, explain: bool = False) -> str:
     a, b, n, k = _suite_header(suite)
     lines = [f"EvalTrust  {a} vs {b} - {n} examples - {k} metrics"]
-    if suite.corrected_alpha != suite.alpha:
-        lines.append(f"significance corrected for {k} metrics ({suite.correction})")
+    line = _suite_correction_line(suite, k)
+    if line:
+        lines.append(line)
     lines += ["", f"{suite.overall_level.value.upper()} (weakest of {k} metrics)", ""]
 
     width = max(len(m) for m in suite.reports)
@@ -211,6 +225,134 @@ def render_suite_plain(suite, explain: bool = False) -> str:
             lines += ["", f"=== {metric} ===", render_plain(report, explain=True).rstrip()]
 
     return ("\n".join(lines).rstrip() + "\n").translate(_ASCII)
+
+
+# --------------------------------------------------------------------------- #
+# Markdown rendering
+# --------------------------------------------------------------------------- #
+
+_MD_MARK = {
+    Status.PASS: "PASS",
+    Status.WARN: "WARN",
+    Status.FAIL: "FAIL",
+    Status.SKIP: "SKIP",
+}
+
+
+def _md_heading(level: int, title: str) -> str:
+    return f"{'#' * level} {title}"
+
+
+def _md_inline(value: object) -> str:
+    """Flatten a user-supplied string so it can't break the surrounding Markdown.
+
+    Metric and model names come from the eval file. A newline would end a table
+    row or start a new heading; a bare ``<`` would open a raw HTML tag, which
+    GitHub renders inside PR comments.
+    """
+    text = " ".join(str(value).split())
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _md_cell(value: object) -> str:
+    return _md_inline(value).replace("|", "\\|")
+
+
+def render_suite_markdown(suite, explain: bool = False) -> str:
+    """Render a multi-metric suite as Markdown for PR comments and docs."""
+    a, b, n, k = _suite_header(suite)
+    lines = [
+        "# EvalTrust",
+        "",
+        f"**{a} vs {b}** - {n} examples - {k} metrics",
+    ]
+    line = _suite_correction_line(suite, k)
+    if line:
+        lines.append(f"{line[0].upper()}{line[1:]}.")
+    lines += [
+        "",
+        f"## {suite.overall_level.value}",
+        "",
+        f"Weakest confidence across {k} metrics.",
+        "",
+        "| Metric | Confidence | Outcome |",
+        "| --- | --- | --- |",
+    ]
+
+    for metric, report in suite.reports.items():
+        outcome = _OUTCOME.get(_metric_outcome(report), (_metric_outcome(report), ""))[0]
+        lines.append(
+            f"| {_md_cell(metric)} | {_md_cell(report.verdict.level.value)} | "
+            f"{_md_cell(outcome)} |")
+
+    if explain:
+        for metric, report in suite.reports.items():
+            lines += [
+                "",
+                _md_heading(2, _md_inline(metric)),
+                "",
+                render_markdown(
+                    report, explain=True, heading_level=3, include_title=False
+                ).rstrip(),
+            ]
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_markdown(
+    report: AuditReport,
+    explain: bool = False,
+    *,
+    heading_level: int = 1,
+    include_title: bool = True,
+) -> str:
+    """Render the report as Markdown for PR comments and documentation."""
+    v = report.verdict
+    lines = []
+    if include_title:
+        lines += [_md_heading(heading_level, "EvalTrust"), ""]
+    lines.append(f"**{_subtitle(report)}**")
+
+    others = _others(report)
+    if others:
+        lines.append(
+            f"Comparing the two strongest of {len(report.models_available)}; "
+            f"others: {', '.join(others)}.")
+
+    verdict_level = heading_level + 1 if include_title else heading_level
+    section_level = verdict_level + 1
+    detail_level = section_level + 1
+    lines += ["", _md_heading(verdict_level, v.level.value), "", v.summary]
+
+    for pillar, items in _grouped(report.findings).items():
+        lines += ["", _md_heading(section_level, pillar)]
+        for f in items:
+            lines.append(f"- **{_MD_MARK[f.status]}** {f.title}")
+
+    todo = [f.how_to_fix for f in report.findings
+            if f.status in (Status.WARN, Status.FAIL)]
+    if todo:
+        lines += ["", _md_heading(section_level, "What to do")] + [
+            f"- {x}" for x in todo]
+
+    optional = [f.how_to_fix for f in report.findings if f.status is Status.SKIP]
+    if optional:
+        lines += ["", _md_heading(section_level, "To check more")] + [
+            f"- {x}" for x in optional]
+
+    if explain:
+        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        if flagged:
+            lines += ["", _md_heading(section_level, "Detail")]
+            for f in flagged:
+                lines += [
+                    "",
+                    _md_heading(detail_level, f"{_MD_MARK[f.status]}: {f.title}"),
+                    f"- **Why:** {f.why}",
+                    f"- **How detected:** {f.how_detected}",
+                ]
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 # --------------------------------------------------------------------------- #

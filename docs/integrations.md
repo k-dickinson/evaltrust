@@ -75,6 +75,12 @@ Or without the action, just call the CLI:
           evaltrust audit results.json --plain --fail-under moderate
 ```
 
+For a PR-comment or job-summary friendly report, emit Markdown:
+
+```yaml
+      - run: evaltrust audit results.json --md >> "$GITHUB_STEP_SUMMARY"
+```
+
 ## Catching regressions between runs
 
 Save each run's audit as JSON, then compare across releases to catch a metric

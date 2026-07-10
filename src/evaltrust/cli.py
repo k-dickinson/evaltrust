@@ -33,7 +33,9 @@ from .report.terminal import (
     print_report,
     print_suite,
     render_diff_plain,
+    render_markdown,
     render_plain,
+    render_suite_markdown,
     render_suite_plain,
 )
 
@@ -88,6 +90,9 @@ def audit(
     reference_judge: Optional[str] = typer.Option(
         None, "--reference-judge",
         help="Name of the human/gold judge to calibrate the AI judges against."),
+    suite_correction: Optional[str] = typer.Option(
+        None, "--suite-correction",
+        help="Multiple-metric correction: bonferroni, holm, or none."),
     threshold: Optional[float] = typer.Option(
         None, "--threshold",
         help="For a single-model eval, the target score to test against (e.g. 0.8)."),
@@ -100,6 +105,8 @@ def audit(
         False, "--json", help="Emit the audit as JSON (for CI and tooling)."),
     html_out: Optional[str] = typer.Option(
         None, "--html", help="Write the audit as a standalone HTML file to this path."),
+    as_markdown: bool = typer.Option(
+        False, "--md", help="Emit the audit as Markdown (for PR comments and docs)."),
     plain: bool = typer.Option(
         False, "--plain", help="Plain ASCII output (no colour or Unicode)."),
     explain: bool = typer.Option(
@@ -124,7 +131,8 @@ def audit(
     overrides = {k: v for k, v in (("alpha", alpha),
                                    ("equivalence_margin", equivalence_margin),
                                    ("seed", seed),
-                                   ("reference_judge", reference_judge))
+                                   ("reference_judge", reference_judge),
+                                   ("suite_correction", suite_correction))
                  if v is not None}
     cfg = replace(cfg, **overrides)
 
@@ -156,6 +164,8 @@ def audit(
     if suite_report is not None:
         if as_json:
             typer.echo(json.dumps(suite_report.to_dict(), indent=2))
+        elif as_markdown:
+            typer.echo(render_suite_markdown(suite_report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_suite_plain(suite_report, explain=explain), nl=False)
         else:
@@ -164,6 +174,8 @@ def audit(
     else:
         if as_json:
             typer.echo(json.dumps(report.to_dict(), indent=2))
+        elif as_markdown:
+            typer.echo(render_markdown(report, explain=explain), nl=False)
         elif plain:
             typer.echo(render_plain(report, explain=explain), nl=False)
         else:

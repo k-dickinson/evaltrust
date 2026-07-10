@@ -20,6 +20,8 @@ size; for continuous scores, a paired permutation test and Cohen's d.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from ..core.schema import EvalData, Finding, Status
@@ -29,6 +31,63 @@ from ..stats.power import minimum_detectable_effect, required_n
 from ..stats.resampling import bootstrap_ci, permutation_test
 
 PILLAR = "Statistical Validity"
+
+
+@dataclass(frozen=True)
+class _Significance:
+    """The significance test, run before any alpha is chosen."""
+
+    p: float
+    test_name: str
+    test_detail: str
+    leader: str
+    trailer: str
+    raw: np.ndarray      # score_b - score_a
+    diffs: np.ndarray    # oriented leader-minus-trailer
+    binary: bool
+
+
+def _significance(data, model_a, model_b, n_resamples, seed) -> _Significance:
+    raw = data.differences(model_a, model_b)  # score_b - score_a
+
+    # Orient toward the leader so reported numbers favour the winner.
+    if float(raw.mean()) >= 0:
+        leader, trailer, diffs = model_b, model_a, raw
+    else:
+        leader, trailer, diffs = model_a, model_b, -raw
+
+    binary = _is_binary(data, model_a, model_b)
+    if binary:
+        b_only, a_only = _discordant_counts(data, leader, trailer)
+        p = mcnemar_exact(b_only, a_only)
+        test_name = "McNemar's exact test"
+        test_detail = (f"{b_only + a_only} discordant pairs "
+                       f"({b_only} for {leader}, {a_only} for {trailer})")
+    else:
+        p = permutation_test(diffs, n_resamples=n_resamples, seed=seed)
+        test_name = "a paired permutation test"
+        test_detail = f"{int(raw.size)} paired examples"
+
+    return _Significance(p=p, test_name=test_name, test_detail=test_detail,
+                         leader=leader, trailer=trailer, raw=raw, diffs=diffs,
+                         binary=binary)
+
+
+def decision_p_value(
+    data: EvalData,
+    model_a: str,
+    model_b: str,
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> float:
+    """The two-sided p-value for the gap between two models.
+
+    The p-value does not depend on alpha, so it can be computed before a
+    significance threshold is known. Multiple-comparison corrections need every
+    metric's p-value up front in order to derive the per-metric thresholds they
+    then feed back into :func:`audit_statistical_validity`.
+    """
+    return _significance(data, model_a, model_b, n_resamples, seed).p
 
 
 def audit_statistical_validity(
@@ -42,30 +101,26 @@ def audit_statistical_validity(
     confidence: float = 0.95,
     n_resamples: int = 10_000,
     seed: int = 0,
+    significant_override: bool | None = None,
 ) -> list[Finding]:
-    raw = data.differences(model_a, model_b)  # score_b - score_a
+    """Audit the statistical validity of an A-vs-B comparison.
+
+    ``significant_override`` replaces the ``p < alpha`` verdict with one decided
+    elsewhere. A step-down correction such as Holm-Bonferroni can refuse to
+    reject a metric whose p-value clears its own threshold, because an earlier
+    metric in the ordering failed; only the correction knows that. Passing the
+    decision in (rather than rewriting the finished findings) keeps the outcome
+    cascade below intact, so a metric that stops being *significant* can still
+    come out *equivalent* rather than defaulting to *inconclusive*.
+    """
+    sig = _significance(data, model_a, model_b, n_resamples, seed)
+    raw, diffs, binary = sig.raw, sig.diffs, sig.binary
+    leader, trailer, p = sig.leader, sig.trailer, sig.p
+    test_name, test_detail = sig.test_name, sig.test_detail
     n = int(raw.size)
 
-    # Orient toward the leader so reported numbers favour the winner.
-    if float(raw.mean()) >= 0:
-        leader, trailer, diffs = model_b, model_a, raw
-    else:
-        leader, trailer, diffs = model_a, model_b, -raw
-
-    binary = _is_binary(data, model_a, model_b)
-
-    # --- significance ---
-    if binary:
-        b_only, a_only = _discordant_counts(data, leader, trailer)
-        p = mcnemar_exact(b_only, a_only)
-        test_name = "McNemar's exact test"
-        test_detail = (f"{b_only + a_only} discordant pairs "
-                       f"({b_only} for {leader}, {a_only} for {trailer})")
-    else:
-        p = permutation_test(diffs, n_resamples=n_resamples, seed=seed)
-        test_name = "a paired permutation test"
-        test_detail = f"{n} paired examples"
-    significant = p < alpha
+    significant = (p < alpha) if significant_override is None \
+        else bool(significant_override)
 
     # --- confidence interval (leader-minus-trailer) ---
     lo, hi = bootstrap_ci(diffs, confidence=confidence,

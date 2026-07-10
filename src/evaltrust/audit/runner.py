@@ -99,6 +99,7 @@ def run_audit(
     seed: int = 0,
     threshold: float | None = None,
     config: "AuditConfig | None" = None,
+    significant_override: bool | None = None,
 ) -> AuditReport:
     # A config bundles every threshold; when not given, build one from the loose
     # kwargs so existing callers keep working unchanged.
@@ -107,13 +108,13 @@ def run_audit(
 
     # Dispatch: two models -> comparison; a threshold or a lone model -> single.
     if model_a is not None and model_b is not None:
-        return _comparison(data, model_a, model_b, cfg)
+        return _comparison(data, model_a, model_b, cfg, significant_override)
     if threshold is not None:
         return _single(data, model_a or _strongest(data), threshold, cfg)
     if len(data.models) == 1:
         return _single(data, model_a or data.models[0], None, cfg)
     model_a, model_b = _pick_models(data)
-    return _comparison(data, model_a, model_b, cfg)
+    return _comparison(data, model_a, model_b, cfg, significant_override)
 
 
 def _strongest(data: EvalData) -> str:
@@ -122,7 +123,7 @@ def _strongest(data: EvalData) -> str:
     return max(data.models, key=lambda m: _mean_score(data, m))
 
 
-def _comparison(data, model_a, model_b, cfg) -> AuditReport:
+def _comparison(data, model_a, model_b, cfg, significant_override=None) -> AuditReport:
     if data.differences(model_a, model_b).size == 0:
         raise ValueError(
             f"No examples have scores for both '{model_a}' and '{model_b}', so "
@@ -136,7 +137,8 @@ def _comparison(data, model_a, model_b, cfg) -> AuditReport:
         data, model_a, model_b, alpha=cfg.alpha,
         equivalence_margin=cfg.equivalence_margin, power_target=cfg.power_target,
         smallest_meaningful_effect=cfg.smallest_meaningful_effect,
-        n_resamples=cfg.n_resamples, seed=cfg.seed)
+        n_resamples=cfg.n_resamples, seed=cfg.seed,
+        significant_override=significant_override)
     findings += audit_benchmark_health(
         data, [model_a, model_b],
         saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread)

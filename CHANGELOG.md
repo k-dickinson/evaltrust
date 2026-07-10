@@ -9,6 +9,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `evaltrust --version` prints the installed version and exits.
+- `evaltrust audit --md` emits Markdown reports for PR comments and docs.
+- Multi-metric suites can use Holm-Bonferroni correction via
+  `--suite-correction holm` or `suite_correction = "holm"`. Every metric is
+  audited once at the alpha its correction assigns, so the equivalence test and
+  the minimum detectable effect are corrected alongside the significance test.
+- Suite reports carry `correction_method` (a stable `bonferroni` / `holm` /
+  `none` identifier for CI to branch on) and `corrected_alpha_by_metric`.
+- Suites run with `--suite-correction none` now say so in the report rather than
+  looking identical to a corrected run.
+
+### Deprecated
+
+- `audit_suite(correct=False)` — pass `correction="none"` instead.
 
 ## [0.5.0] — 2026-07-08
 
