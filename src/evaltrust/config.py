@@ -91,8 +91,9 @@ class AuditConfig:
         else:
             _validate_weights(dict(self.metric_weights))
 
-        if self.score_ceiling is not None and self.score_ceiling <= 0:
-            raise ValueError(
+        if self.score_ceiling is not None:
+            if not math.isfinite(self.score_ceiling) or self.score_ceiling <= 0:
+                raise ValueError(
                 f"score_ceiling must be a positive number, got {self.score_ceiling!r}. "
                 "Set it to the true upper bound of your score scale (e.g. 5.0 for a 0-5 rubric)."
             )

@@ -44,6 +44,7 @@ def _saturation(per_model, pooled, saturation_fraction, score_ceiling=None) -> F
     ceiling = float(score_ceiling) if ceiling_is_configured else observed_max
     top_mean = max(float(v.mean()) for v in per_model.values() if v.size)
     frac = (top_mean / ceiling) if ceiling > 0 else 0.0
+    display_frac = min(frac,1.0) if ceiling_is_configured else frac
     saturated = ceiling > 0 and frac >= saturation_fraction
 
     ceiling_source = "configured" if ceiling_is_configured else "observed"
@@ -58,7 +59,7 @@ def _saturation(per_model, pooled, saturation_fraction, score_ceiling=None) -> F
         ),
         how_detected=(
             f"The strongest model averaged {top_mean:.3f} against a {ceiling_source} "
-            f"ceiling of {ceiling:.3f} ({frac:.0%} of maximum)."
+            f"ceiling of {ceiling:.3f} ({display_frac:.0%} of maximum)."
         ),
         how_to_fix=(
             "Switch to a harder benchmark. Gains at the ceiling rarely transfer."
