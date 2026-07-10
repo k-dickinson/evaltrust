@@ -13,7 +13,7 @@ from .api import audit, audit_suite
 from .audit.runner import AuditReport, run_audit
 from .audit.suite import SuiteReport
 from .audit.verdict import UntrustworthyError, Verdict, VerdictLevel
-from .core.schema import EvalData, Example, Finding, Status
+from .core.schema import EvalData, Example, Finding, Preference, Status
 
 __all__ = [
     "audit",
@@ -27,5 +27,6 @@ __all__ = [
     "EvalData",
     "Example",
     "Finding",
+    "Preference",
     "Status",
 ]

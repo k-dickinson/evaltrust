@@ -25,6 +25,11 @@ def merge_two(
     data_a: EvalData, data_b: EvalData, label_a: str, label_b: str
 ) -> EvalData:
     """Merge two one-model files, keeping examples present in both."""
+    if data_a.has_preferences or data_b.has_preferences:
+        raise ValueError(
+            "Two-file pairing is score-only. Put pairwise preferences for both "
+            "models in one file instead."
+        )
     model_a = primary_model(data_a)
     model_b = primary_model(data_b)
     b_by_id = {ex.id: ex for ex in data_b.examples}

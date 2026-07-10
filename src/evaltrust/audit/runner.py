@@ -11,6 +11,7 @@ from ..core.schema import EvalData, Finding, Status
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
 from .judge_reliability import audit_judge_reliability
+from .preference import audit_preferences
 from .single import audit_single
 from .repeatability import audit_repeatability
 from .statistical import audit_statistical_validity
@@ -106,6 +107,18 @@ def _pairing_coverage(data: EvalData) -> Finding | None:
 
 def _pick_models(data: EvalData) -> tuple[str, str]:
     """Compare the two strongest models by mean score (stable, documented)."""
+    preference_only = data.has_preferences and not any(
+        ex.scores for ex in data.examples)
+    if preference_only:
+        if len(data.models) < 2:
+            raise ValueError(
+                "Pairwise preferences need two models to compare. Include both "
+                "model names in the input or pass model_a and model_b.")
+        if len(data.models) > 2:
+            raise ValueError(
+                "Preference-only data names more than two models; name the two "
+                "models to compare with model_a and model_b.")
+        return data.models[0], data.models[1]
     if len(data.models) < 2:
         raise ValueError("EvalTrust needs at least two models to compare.")
     ranked = sorted(data.models, key=lambda m: _mean_score(data, m), reverse=True)
@@ -134,8 +147,16 @@ def run_audit(
     if model_a is not None and model_b is not None:
         return _comparison(data, model_a, model_b, cfg, significant=significant)
     if threshold is not None:
+        if data.has_preferences and not any(ex.scores for ex in data.examples):
+            raise ValueError(
+                "A threshold audit needs scores. Pairwise preferences need two "
+                "models and cannot be audited against a score threshold.")
         return _single(data, model_a or _strongest(data), threshold, cfg)
     if len(data.models) == 1:
+        if data.has_preferences and not any(ex.scores for ex in data.examples):
+            raise ValueError(
+                "Pairwise preferences need two models to compare. Include both "
+                "model names in the input or pass model_a and model_b.")
         return _single(data, model_a or data.models[0], None, cfg)
     model_a, model_b = _pick_models(data)
     return _comparison(data, model_a, model_b, cfg, significant=significant)
@@ -148,38 +169,113 @@ def _strongest(data: EvalData) -> str:
 
 
 def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
-    if data.differences(model_a, model_b).size == 0:
+    differences = data.differences(model_a, model_b)
+    has_pair_scores = any(
+        model_a in ex.scores or model_b in ex.scores for ex in data.examples)
+    preference_only = not has_pair_scores and data.has_preferences
+    if differences.size == 0 and not data.has_preferences:
         raise ValueError(
             f"No examples have scores for both '{model_a}' and '{model_b}', so "
-            "there's nothing to compare. Check the models and score columns.")
+            "there's nothing to compare. Check the models and provide scores or "
+            "preferences.")
 
     findings: list[Finding] = []
     for quality in (_data_quality(data), _pairing_coverage(data)):
         if quality is not None:
             findings.append(quality)
-    findings += audit_statistical_validity(
-        data, model_a, model_b, alpha=cfg.alpha,
-        equivalence_margin=cfg.equivalence_margin, power_target=cfg.power_target,
-        smallest_meaningful_effect=cfg.smallest_meaningful_effect,
-        n_resamples=cfg.n_resamples, seed=cfg.seed, significant=significant)
-    findings += audit_benchmark_health(
-        data, [model_a, model_b],
-        saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread,
-        score_ceiling=cfg.score_ceiling)
-    findings += audit_repeatability(data, model_a, model_b)
-    findings += audit_judge_reliability(
-        data, model_a, model_b,
-        agreement_threshold=cfg.judge_agreement_threshold)
-    findings += audit_judge_calibration(
-        data, model_a, model_b,
-        threshold=cfg.judge_agreement_threshold,
-        correlation_threshold=cfg.judge_correlation_threshold,
-        reference_judge=cfg.reference_judge)
+    if differences.size:
+        findings += audit_statistical_validity(
+            data, model_a, model_b, alpha=cfg.alpha,
+            equivalence_margin=cfg.equivalence_margin, power_target=cfg.power_target,
+            smallest_meaningful_effect=cfg.smallest_meaningful_effect,
+            n_resamples=cfg.n_resamples, seed=cfg.seed, significant=significant)
+    else:
+        findings.append(_score_skip(
+            "Statistical Validity",
+            "score_statistical_validity",
+            (
+                "Preference-only data has no paired model scores."
+                if preference_only else
+                "No examples contain scores for both selected models."
+            ),
+            (
+                "Add paired per-model scores to run the score test. Preference "
+                "significance is assessed separately."
+            ),
+            "preference_only" if preference_only else "no_paired_scores",
+        ))
+
+    if has_pair_scores:
+        findings += audit_benchmark_health(
+            data, [model_a, model_b],
+            saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread,
+            score_ceiling=cfg.score_ceiling)
+    else:
+        findings.append(_score_skip(
+            "Benchmark Health",
+            "benchmark_health",
+            "Preference-only data has no scores for benchmark saturation or spread.",
+            "Add per-model scores to assess benchmark headroom and discrimination.",
+            "preference_only",
+        ))
+
+    if preference_only:
+        findings += [
+            _score_skip(
+                "Repeatability",
+                "repeatability",
+                "Preference-only data has no repeated score runs to compare.",
+                "Add repeated per-model score runs to assess score repeatability.",
+                "preference_only",
+            ),
+            _score_skip(
+                "Judge Reliability",
+                "judge_reliability",
+                "Preference votes are present, but per-judge model scores are absent.",
+                "Add per-judge model scores to run score reliability and calibration checks.",
+                "preference_only",
+            ),
+        ]
+    else:
+        findings += audit_repeatability(data, model_a, model_b)
+        findings += audit_judge_reliability(
+            data, model_a, model_b,
+            agreement_threshold=cfg.judge_agreement_threshold)
+        findings += audit_judge_calibration(
+            data, model_a, model_b,
+            threshold=cfg.judge_agreement_threshold,
+            correlation_threshold=cfg.judge_correlation_threshold,
+            reference_judge=cfg.reference_judge)
+
+    if data.has_preferences:
+        findings += audit_preferences(
+            data, model_a, model_b, alpha=cfg.alpha,
+            n_resamples=cfg.n_resamples, seed=cfg.seed,
+            significant=significant if preference_only else None)
 
     return AuditReport(
         model_a=model_a, model_b=model_b, n_examples=data.n_examples,
         source_format=data.source_format, findings=findings,
         verdict=compute_verdict(findings), models_available=list(data.models))
+
+
+def _score_skip(pillar, check, detected, fix, reason) -> Finding:
+    return Finding(
+        pillar=pillar,
+        title="Not assessed",
+        status=Status.SKIP,
+        why=(
+            "This score-based check needs evidence that pairwise preferences do not "
+            "contain."
+        ),
+        how_detected=detected,
+        how_to_fix=fix,
+        details={
+            "check": check,
+            "assessed": False,
+            "reason": reason,
+        },
+    )
 
 
 def _single(data, model, threshold, cfg) -> AuditReport:

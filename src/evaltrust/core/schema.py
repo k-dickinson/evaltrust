@@ -24,6 +24,12 @@ class Status(Enum):
     SKIP = "skip"    # the data needed for this check is absent
 
 
+class Preference(Enum):
+    """A non-model outcome for a pairwise preference judgment."""
+
+    TIE = "tie"
+
+
 @dataclass(frozen=True)
 class Example:
     """One evaluated item and its score(s).
@@ -32,12 +38,14 @@ class Example:
     evidence that unlocks more checks:
       - ``runs``:   model -> list of scores from repeated evaluations.
       - ``judges``: judge -> {model -> score} when several judges scored the item.
+      - ``preferences``: judge -> winning model id, or ``Preference.TIE``.
     """
 
     id: str
     scores: dict[str, float]
     runs: dict[str, list[float]] | None = None
     judges: dict[str, dict[str, float]] | None = None
+    preferences: dict[str, str | Preference] | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,10 @@ class EvalData:
     @property
     def has_judges(self) -> bool:
         return any(ex.judges for ex in self.examples)
+
+    @property
+    def has_preferences(self) -> bool:
+        return any(ex.preferences for ex in self.examples)
 
     def paired_scores(
         self, model_a: str, model_b: str
@@ -123,6 +135,8 @@ def _jsonable(value):
         return {k: _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
         return value
     if isinstance(value, float):

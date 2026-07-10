@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..core.schema import EvalData, Example
+from ..core.schema import EvalData, Example, Preference
 
 # Alias tables shared by the structural adapters. Lower-cased on lookup.
 ID_KEYS = ("id", "example_id", "test_id", "case_id", "testidx", "test_idx",
@@ -21,10 +21,12 @@ MODEL_KEYS = ("model", "provider", "system", "variant", "candidate", "engine",
 SCORE_KEYS = ("score", "pass", "passed", "success", "correct", "result",
               "value", "metric_score", "rating", "grade", "reward")
 JUDGE_KEYS = ("judge", "evaluator", "grader", "rater", "judge_model")
+PREFERENCE_KEYS = ("preference", "winner")
 METRIC_KEYS = ("metric", "metric_name", "criterion", "dimension", "check_name",
                "aspect")
 
 DEFAULT_METRIC = "score"
+DEFAULT_PREFERENCE_JUDGE = "default"
 
 _TRUE = {"pass", "passed", "true", "yes", "correct", "success", "y", "t", "1", "win"}
 _FALSE = {"fail", "failed", "false", "no", "incorrect", "failure", "n", "f", "0", "loss"}
@@ -43,6 +45,17 @@ class Record:
     score: float
     judge: str | None = None
     metric: str = DEFAULT_METRIC
+
+
+@dataclass(frozen=True)
+class PreferenceRecord:
+    """One judge's winner (or tie) for an example-level model pair."""
+
+    example_id: str
+    preference: str | Preference
+    judge: str = DEFAULT_PREFERENCE_JUDGE
+    metric: str = DEFAULT_METRIC
+    models: tuple[str, ...] = ()
 
 
 def coerce_score(raw) -> float:
@@ -69,7 +82,9 @@ def coerce_score(raw) -> float:
 
 
 def records_to_evaldata(
-    records: list[Record], source_format: str, metadata: dict | None = None
+    records: list[Record | PreferenceRecord],
+    source_format: str,
+    metadata: dict | None = None,
 ) -> EvalData:
     """Group flat records into canonical examples.
 
@@ -81,10 +96,20 @@ def records_to_evaldata(
 
     # example_id -> model -> {"plain": [scores], "judges": {judge: score}}
     grouped: OrderedDict[str, OrderedDict[str, dict]] = OrderedDict()
+    preferences: OrderedDict[str, OrderedDict[str, str | Preference]] = OrderedDict()
     model_order: list[str] = []
 
     for rec in records:
         models = grouped.setdefault(rec.example_id, OrderedDict())
+        if isinstance(rec, PreferenceRecord):
+            per_judge = preferences.setdefault(rec.example_id, OrderedDict())
+            per_judge[rec.judge] = rec.preference
+            for model in rec.models:
+                if model not in model_order:
+                    model_order.append(model)
+            if isinstance(rec.preference, str) and rec.preference not in model_order:
+                model_order.append(rec.preference)
+            continue
         cell = models.setdefault(rec.model, {"plain": [], "judges": OrderedDict()})
         if rec.model not in model_order:
             model_order.append(rec.model)
@@ -115,6 +140,7 @@ def records_to_evaldata(
             scores=scores,
             runs=runs or None,
             judges=judges or None,
+            preferences=dict(preferences.get(ex_id, {})) or None,
         ))
 
     return EvalData(
@@ -126,7 +152,9 @@ def records_to_evaldata(
 
 
 def records_to_suite(
-    records: list[Record], source_format: str, metadata: dict | None = None
+    records: list[Record | PreferenceRecord],
+    source_format: str,
+    metadata: dict | None = None,
 ) -> "OrderedDict[str, EvalData]":
     """Split records by metric into one canonical dataset per metric.
 

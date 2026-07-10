@@ -7,13 +7,16 @@ scores in almost any shape can be audited without reformatting.
 
 from __future__ import annotations
 
-from ..core.schema import EvalData, Example
+from ..core.schema import EvalData, Example, Preference
 from .common import (
+    DEFAULT_PREFERENCE_JUDGE,
     DEFAULT_METRIC,
     ID_KEYS,
     JUDGE_KEYS,
     METRIC_KEYS,
     MODEL_KEYS,
+    PREFERENCE_KEYS,
+    PreferenceRecord,
     Record,
     SCORE_KEYS,
     coerce_score,
@@ -47,7 +50,81 @@ def _find_record_list(raw) -> list | None:
     return None
 
 
-def dicts_to_records(rows: list[dict], skipped: list | None = None) -> list[Record]:
+def _coerce_preference(
+    raw, declared_models: tuple[str, ...] = ()
+) -> str | Preference:
+    """Map the reserved tie token while preserving string model ids."""
+    if raw is Preference.TIE:
+        return raw
+    if isinstance(raw, str):
+        value = raw.strip()
+        if value.casefold() == Preference.TIE.value:
+            if any(
+                model.casefold() == Preference.TIE.value
+                for model in declared_models
+            ):
+                raise ValueError(
+                    f"Preference value {value!r} is ambiguous because a declared "
+                    "model is also named 'tie'. Rename that model for generic "
+                    "preference ingestion, or use the typed EvalData schema."
+                )
+            return Preference.TIE
+        if value:
+            return value
+    raise ValueError(f"Cannot interpret {raw!r} as a pairwise preference")
+
+
+def _present(value) -> bool:
+    return value is not None and not (
+        isinstance(value, str) and not value.strip())
+
+
+def _is_preference_column(rows, key) -> bool:
+    """Distinguish a preference alias from a wide score model with that name."""
+    values = [row.get(key) for row in rows if _present(row.get(key))]
+    if not values:
+        return False
+    for value in values:
+        if value is Preference.TIE:
+            return True
+        if not isinstance(value, str):
+            return False
+        if value.strip().casefold() == Preference.TIE.value:
+            return True
+        try:
+            coerce_score(value)
+        except ValueError:
+            continue
+        return False
+    return True
+
+
+def _known_models(rows, model_key, columns) -> tuple[str, ...]:
+    """Return explicit long-format models or wide columns with actual scores."""
+    if model_key:
+        models = []
+        for row in rows:
+            value = row.get(model_key)
+            if _present(value) and str(value) not in models:
+                models.append(str(value))
+        if models:
+            return tuple(models)
+
+    models = []
+    for column in columns:
+        for row in rows:
+            try:
+                coerce_score(row.get(column))
+            except ValueError:
+                continue
+            models.append(str(column))
+            break
+    return tuple(models)
+
+
+def dicts_to_records(
+    rows: list[dict], skipped: list | None = None
+) -> list[Record | PreferenceRecord]:
     """Extract (example, model, score) records from dict rows.
 
     Handles long format (model + score columns) and wide format (one score column
@@ -59,14 +136,39 @@ def dicts_to_records(rows: list[dict], skipped: list | None = None) -> list[Reco
     model_key = _first_alias(keys, MODEL_KEYS)
     judge_key = _first_alias(keys, JUDGE_KEYS)
     score_key = _first_alias(keys, SCORE_KEYS)
+    preference_candidate = _first_alias(keys, PREFERENCE_KEYS)
+    preference_key = (
+        preference_candidate
+        if preference_candidate and _is_preference_column(rows, preference_candidate)
+        else None
+    )
     metric_key = _first_alias(keys, METRIC_KEYS)
 
-    records: list[Record] = []
+    reserved = {k for k in (id_key, judge_key, metric_key) if k}
+    if model_key and score_key:
+        reserved.update((model_key, score_key))
+    if preference_key:
+        reserved.add(preference_key)
+    wide_columns = [column for column in keys if column not in reserved]
+    declared_models = (
+        _known_models(rows, model_key, wide_columns) if preference_key else ()
+    )
+
+    records: list[Record | PreferenceRecord] = []
     for idx, row in enumerate(rows):
         ex_id = str(row[id_key]) if id_key and row.get(id_key) is not None else str(idx)
         judge = str(row[judge_key]) if judge_key and row.get(judge_key) is not None else None
         metric = (str(row[metric_key]) if metric_key and row.get(metric_key) is not None
                   else DEFAULT_METRIC)
+
+        if preference_key and _present(row.get(preference_key)):
+            records.append(PreferenceRecord(
+                ex_id,
+                _coerce_preference(row[preference_key], declared_models),
+                judge or DEFAULT_PREFERENCE_JUDGE,
+                metric,
+                declared_models,
+            ))
 
         if model_key and score_key:
             try:
@@ -77,7 +179,6 @@ def dicts_to_records(rows: list[dict], skipped: list | None = None) -> list[Reco
                 continue
             records.append(Record(ex_id, str(row[model_key]), score, judge, metric))
         else:
-            reserved = {k for k in (id_key, judge_key, metric_key) if k}
             for col, val in row.items():
                 if col in reserved:
                     continue

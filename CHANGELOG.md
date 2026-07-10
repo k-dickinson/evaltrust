@@ -9,6 +9,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Line-format adapters.** JSONL ingest can detect specific row formats before
   falling through to the existing generic record path; lm-eval sample logs are
   the first supported format.
+- **Pairwise preference judgments:** audit judge-level A/B/tie votes with an exact sign test and seeded win-rate interval.
+
 - **Judge calibration thresholds are independently tunable.** A new
   `judge_correlation_threshold` config key (default `0.8`) sets the Spearman
   rank-correlation floor for continuous judge scores, separate from

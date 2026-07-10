@@ -96,15 +96,24 @@ def _suite_models(suite: dict[str, EvalData], model_a, model_b) -> tuple[str, st
         return model_a, model_b
 
     totals: "OrderedDict[str, list[float]]" = OrderedDict()
+    preference_models: "OrderedDict[str, None]" = OrderedDict()
     for data in suite.values():
+        if data.has_preferences:
+            for model in data.models:
+                preference_models.setdefault(model, None)
         for m in data.models:
             vals = [ex.scores[m] for ex in data.examples if m in ex.scores]
             if vals:
                 totals.setdefault(m, []).append(float(np.mean(vals)))
-    if len(totals) < 2:
-        raise ValueError("A suite needs at least two models to compare.")
-    ranked = sorted(totals, key=lambda m: np.mean(totals[m]), reverse=True)
-    return ranked[0], ranked[1]
+    if len(totals) >= 2:
+        ranked = sorted(totals, key=lambda m: np.mean(totals[m]), reverse=True)
+        return ranked[0], ranked[1]
+    if len(preference_models) == 2:
+        pair = list(preference_models)
+        return pair[0], pair[1]
+    raise ValueError(
+        "A suite needs one unambiguous pair of models to compare. Include two "
+        "models in the data or pass model_a and model_b.")
 
 
 def audit_suite(
@@ -141,6 +150,17 @@ def audit_suite(
     model_a, model_b = _suite_models(suite, model_a, model_b)
     k = len(suite)
 
+    mixed_hypotheses = any(
+        data.has_preferences and data.differences(model_a, model_b).size
+        for data in suite.values()
+    )
+    if k > 1 and method != "none" and mixed_hypotheses:
+        raise ValueError(
+            "A corrected multi-metric suite cannot combine score and preference "
+            "significance in the same metric yet. Split the hypothesis families "
+            "or use correction='none'."
+        )
+
     # A single metric can't inflate anything, so no correction ever applies.
     if k == 1 or method == "none":
         return _uncorrected_suite(suite, model_a, model_b, cfg, single=(k == 1))
@@ -167,7 +187,7 @@ def _run_metrics(suite, model_a, model_b, cfg_for,
 
 def _decision(report: AuditReport) -> "Finding | None":
     for f in report.findings:
-        if f.details.get("check") == "decision":
+        if f.details.get("check") in {"decision", "preference_significance"}:
             return f
     return None
 
