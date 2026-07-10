@@ -108,3 +108,12 @@ def test_consensus_skips_when_all_judges_scored_only_one_model():
     assert consensus.status is Status.SKIP
     assert "gpt" in consensus.how_detected
     assert "claude" in consensus.how_detected
+
+
+def test_consensus_all_skipped_details_includes_skipped_judges():
+    # skipped_judges must appear in details for --json consumers
+    ex = [{"gpt": {"A": 0.5}, "claude": {"A": 0.7}} for _ in range(10)]
+    findings = audit_judge_reliability(make_data(ex), "A", "B")
+    consensus = by_check(findings, "judge_consensus")
+    assert "skipped_judges" in consensus.details
+    assert set(consensus.details["skipped_judges"]) == {"gpt", "claude"}

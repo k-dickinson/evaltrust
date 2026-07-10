@@ -86,7 +86,7 @@ def _consensus(data, judges, model_a, model_b) -> Finding:
             how_detected="All judges skipped: " + ", ".join(skipped_judges) + ".",
             how_to_fix="Ensure every judge scores both models on the same examples.",
             details={"check": "judge_consensus", "per_judge_winner": {},
-                     "unanimous": False},
+                     "unanimous": False, "skipped_judges": skipped_judges},
         )
 
     unique = set(winners.values())
