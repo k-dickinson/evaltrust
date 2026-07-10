@@ -18,10 +18,12 @@ from .pairing import merge_two, primary_model
 from .schema import EvalData
 from ..adapters.common import (
     DEFAULT_METRIC,
+    Record,
     records_to_evaldata,
     records_to_suite,
 )
 from ..adapters.generic import _find_record_list, dicts_to_records
+from ..adapters.line_registry import detect_line_adapter
 from ..adapters.registry import UnknownFormatError, detect_adapter
 
 
@@ -79,12 +81,25 @@ def _parse_jsonl_dicts(text: str, name: str) -> list[dict]:
     return rows
 
 
-def _load_jsonl(text: str, name: str) -> EvalData:
+def _records_from_jsonl(
+    text: str, name: str, path: Path | None
+) -> tuple[list[Record], str, dict]:
+    rows = _parse_jsonl_dicts(text, name)
+    adapter = detect_line_adapter(rows)
+    if adapter is not None:
+        records, metadata = adapter.parse_lines(rows, path=path)
+        return records, adapter.source_format, metadata
+
+    skipped: list = []
+    records = dicts_to_records(rows, skipped)
+    return records, "jsonl", {"skipped_rows": len(skipped)}
+
+
+def _load_jsonl(text: str, name: str, path: Path | None = None) -> EvalData:
     if _is_json_array_document(text):
         return _load_json(text)
-    skipped: list = []
-    records = dicts_to_records(_parse_jsonl_dicts(text, name), skipped)
-    return records_to_evaldata(records, "jsonl", {"skipped_rows": len(skipped)})
+    records, source_format, metadata = _records_from_jsonl(text, name, path)
+    return records_to_evaldata(records, source_format, metadata)
 
 
 def load(path: str) -> EvalData:
@@ -111,14 +126,14 @@ def load(path: str) -> EvalData:
                 f"column {e.colno}). Check that the file is valid JSON."
             ) from e
     if suffix == ".jsonl":
-        return _load_jsonl(text, p.name)
+        return _load_jsonl(text, p.name, p)
 
     try:
         return _load_json(text)
     except (json.JSONDecodeError, UnknownFormatError):
         pass
     try:
-        return _load_jsonl(text, p.name)
+        return _load_jsonl(text, p.name, p)
     except (ValueError, UnknownFormatError):
         return _load_csv(text)
 
@@ -148,6 +163,10 @@ def load_suite(path: str) -> "OrderedDict[str, EvalData]":
             return _suite_from_rows(_find_record_list(raw), "generic")
         return OrderedDict([(DEFAULT_METRIC, adapter.parse(raw))])
 
+    def _suite_from_jsonl() -> "OrderedDict[str, EvalData]":
+        records, source_format, metadata = _records_from_jsonl(text, p.name, p)
+        return records_to_suite(records, source_format, metadata)
+
     if suffix == ".csv":
         rows = list(csv.DictReader(io.StringIO(text)))
         if not rows:
@@ -159,7 +178,7 @@ def load_suite(path: str) -> "OrderedDict[str, EvalData]":
         # through detection so a metric column still fans out into a suite.
         if _is_json_array_document(text):
             return _suite_from_json()
-        return _suite_from_rows(_parse_jsonl_dicts(text, p.name), "jsonl")
+        return _suite_from_jsonl()
 
     # JSON (or fallback).
     try:
@@ -168,7 +187,7 @@ def load_suite(path: str) -> "OrderedDict[str, EvalData]":
         if suffix == ".json":
             raise
         try:
-            return _suite_from_rows(_parse_jsonl_dicts(text, p.name), "jsonl")
+            return _suite_from_jsonl()
         except (ValueError, UnknownFormatError):
             return _suite_from_rows(list(csv.DictReader(io.StringIO(text))), "csv")
 

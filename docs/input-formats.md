@@ -104,6 +104,9 @@ silently, and a file whose content is actually a JSON array is read as one JSON
 document. A `metric` column fans out into a multi-metric suite exactly as it does
 for CSV and record lists.
 
+Known line formats are detected before generic record extraction; unclaimed rows
+keep the existing JSONL behavior.
+
 ### CSV
 
 Long format - one row per (example, model):

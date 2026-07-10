@@ -108,6 +108,42 @@ class GenericRecordsAdapter:
                                    {"skipped_rows": len(skipped)})
 
 
+def _coerce_runs(runs):
+    """Coerce a model -> run-list mapping. A run list must stay aligned, so if any
+    value in it is unreadable the whole model's runs are dropped. A non-dict block
+    or non-iterable list is dropped too, never raised. Empty -> None."""
+    if not isinstance(runs, dict) or not runs:
+        return None
+    out = {}
+    for m, vs in runs.items():
+        try:
+            out[str(m)] = [coerce_score(v) for v in vs]
+        except (ValueError, TypeError):   # unreadable value or non-iterable list
+            continue
+    return out or None
+
+
+def _coerce_judges(judges):
+    """Coerce a judge -> {model -> score} mapping, dropping any (judge, model)
+    whose score is unreadable. A non-dict block or non-dict per-judge map is
+    dropped too, never raised. Empty judges (or empty per-judge maps) -> None."""
+    if not isinstance(judges, dict) or not judges:
+        return None
+    out = {}
+    for j, mv in judges.items():
+        if not isinstance(mv, dict):
+            continue
+        scored = {}
+        for m, v in mv.items():
+            try:
+                scored[str(m)] = coerce_score(v)
+            except (ValueError, TypeError):
+                continue
+        if scored:
+            out[str(j)] = scored
+    return out or None
+
+
 class NativeNestedAdapter:
     """Structured JSON: {"examples": [{"id", "scores": {model: score}, ...}]}."""
 
@@ -125,22 +161,25 @@ class NativeNestedAdapter:
     def parse(self, raw) -> EvalData:
         examples = []
         models: list[str] = []
+        skipped = 0
         for i, ex in enumerate(raw["examples"]):
-            scores = {str(m): coerce_score(s) for m, s in ex["scores"].items()}
+            scores = {}
+            for m, s in ex["scores"].items():
+                try:
+                    scores[str(m)] = coerce_score(s)
+                except ValueError:
+                    skipped += 1   # count only unreadable main scores
             for m in scores:
                 if m not in models:
                     models.append(m)
-            runs = ex.get("runs")
-            runs = ({str(m): [coerce_score(v) for v in vs] for m, vs in runs.items()}
-                    if runs else None)
-            judges = ex.get("judges")
-            judges = ({str(j): {str(m): coerce_score(v) for m, v in mv.items()}
-                       for j, mv in judges.items()} if judges else None)
+            runs = _coerce_runs(ex.get("runs"))
+            judges = _coerce_judges(ex.get("judges"))
             examples.append(Example(id=str(ex.get("id", i)), scores=scores,
                                     runs=runs, judges=judges))
 
         if raw.get("models"):
             models = [str(m) for m in raw["models"]]
+        metadata = dict(raw.get("metadata", {}))
+        metadata["skipped_rows"] = skipped
         return EvalData(models=models, examples=examples,
-                        source_format=self.source_format,
-                        metadata=raw.get("metadata", {}))
+                        source_format=self.source_format, metadata=metadata)

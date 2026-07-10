@@ -40,6 +40,94 @@ def test_native_nested_rejects_a_plain_list():
     assert not NativeNestedAdapter().detect([{"id": 1, "model": "A", "score": 1}])
 
 
+def test_native_nested_skips_and_counts_unreadable_score():
+    # One junk score must not crash the whole file: drop that model's score,
+    # keep the example's other scores, and count it so the Data Quality finding
+    # reflects the drop (like the CSV and generic record paths).
+    raw = {
+        "models": ["A", "B"],
+        "examples": [
+            {"id": "q1", "scores": {"A": 1, "B": 0}},          # clean
+            {"id": "q2", "scores": {"A": 0, "B": "banana"}},   # B unreadable
+        ],
+    }
+    data = NativeNestedAdapter().parse(raw)
+    assert data.n_examples == 2
+    assert data.examples[1].scores == {"A": 0.0}   # B dropped, A kept
+    assert data.metadata["skipped_rows"] == 1
+
+
+def test_native_nested_records_metadata_when_all_scores_are_clean():
+    data = NativeNestedAdapter().parse(NATIVE)
+    assert data.metadata["skipped_rows"] == 0
+
+
+def test_native_nested_drops_bad_runs_and_judges_without_counting():
+    # A junk value inside runs/judges only gates an optional check, so it drops
+    # that block to None and leaves the main scores untouched -- and it is NOT
+    # counted as a skipped row (skipped_rows means dropped main scores only).
+    raw = {
+        "models": ["A", "B"],
+        "examples": [
+            {"id": "q1", "scores": {"A": 1, "B": 0},
+             "runs": {"A": [0, "banana"], "B": [1, 1]},        # A's runs unreadable
+             "judges": {"human": {"A": 1, "B": "nope"}}},      # one judge score bad
+        ],
+    }
+    data = NativeNestedAdapter().parse(raw)
+    ex = data.examples[0]
+    assert ex.scores == {"A": 1.0, "B": 0.0}          # main scores untouched
+    assert ex.runs == {"B": [1.0, 1.0]}               # A's bad run list dropped
+    assert ex.judges == {"human": {"A": 1.0}}         # only B's bad judge score dropped
+    assert data.metadata["skipped_rows"] == 0         # runs/judges are not counted
+
+
+def test_native_nested_collapses_fully_bad_runs_and_judges_to_none():
+    # When every value in a block is unreadable, the whole block collapses to
+    # None (nothing left to gate the optional check on), main scores stay intact,
+    # and it is still not counted.
+    raw = {
+        "models": ["A", "B"],
+        "examples": [
+            {"id": "q1", "scores": {"A": 1, "B": 0},
+             "runs": {"A": ["banana"], "B": ["kiwi"]},         # every run list bad
+             "judges": {"human": {"A": "banana", "B": "nope"}}},  # every judge score bad
+        ],
+    }
+    data = NativeNestedAdapter().parse(raw)
+    ex = data.examples[0]
+    assert ex.scores == {"A": 1.0, "B": 0.0}          # main scores untouched
+    assert ex.runs is None                            # whole runs block collapsed
+    assert ex.judges is None                          # whole judges block collapsed
+    assert data.metadata["skipped_rows"] == 0
+
+
+def test_native_nested_tolerates_malformed_runs_and_judges_structures():
+    # Structurally wrong (not just unreadable-value) optional blocks must not
+    # abort the parse: a non-iterable run list, or a runs/judges block that isn't
+    # a dict, is dropped like any other bad optional data. Main scores survive
+    # and structural issues are not counted.
+    raw = {
+        "models": ["A", "B"],
+        "examples": [
+            {"id": "q1", "scores": {"A": 1, "B": 0},
+             "runs": {"A": 5, "B": [1, 1]},          # A's run list isn't iterable
+             "judges": {"human": 7}},                # a judge's value isn't a dict
+            {"id": "q2", "scores": {"A": 0, "B": 1},
+             "runs": [1, 2, 3],                      # runs block isn't a dict
+             "judges": [1, 2]},                      # judges block isn't a dict
+        ],
+    }
+    data = NativeNestedAdapter().parse(raw)           # must not raise
+    assert data.n_examples == 2
+    assert data.examples[0].scores == {"A": 1.0, "B": 0.0}
+    assert data.examples[0].runs == {"B": [1.0, 1.0]}   # A dropped, B kept
+    assert data.examples[0].judges is None              # bad judge value -> None
+    assert data.examples[1].runs is None                # non-dict runs -> None
+    assert data.examples[1].judges is None              # non-dict judges -> None
+    assert data.metadata["skipped_rows"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Generic records: long format (one row per model) and wide format
 # ---------------------------------------------------------------------------

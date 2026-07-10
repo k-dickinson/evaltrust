@@ -69,6 +69,22 @@ REGISTRY: list[Adapter] = [
 ]
 ```
 
+## Line-format adapters
+
+Line-delimited formats use `LineAdapter` from `adapters/line_registry.py`:
+
+```python
+class LineAdapter(Protocol):
+    source_format: str
+    def detect_lines(self, rows: list[dict]) -> bool: ...
+    def parse_lines(
+        self, rows: list[dict], *, path: Path | None = None
+    ) -> tuple[list[Record], dict]: ...
+```
+
+Register specific formats in `LINE_REGISTRY`. Unclaimed rows keep using the
+existing generic JSONL record path.
+
 ## Testing it
 
 Add a test with a small fixture that represents the **real** file structure of the
