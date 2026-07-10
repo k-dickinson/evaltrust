@@ -316,3 +316,12 @@ def test_suite_json_with_html_keeps_stdout_pure_json(tmp_path):
     assert result.exit_code == 0
     payload = json.loads(result.stdout)   # must parse cleanly, no trailing warning
     assert "metrics" in payload
+
+
+def test_config_typo_in_explicit_config_is_an_error(tmp_path):
+    policy = tmp_path / "policy.toml"
+    policy.write_text("alpah = 0.01\n")
+    result = runner.invoke(app, ["audit", noise_file(tmp_path),
+                                 "--config", str(policy)])
+    assert result.exit_code == 2
+    assert "alpah" in result.stdout

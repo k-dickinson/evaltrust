@@ -214,3 +214,33 @@ def test_from_dict_bare_string_gated_metrics_raises_value_error():
     """TOML typo: gated_metrics = "safety" instead of ["safety"] must raise."""
     with pytest.raises(ValueError, match="bare string"):
         AuditConfig.from_dict({"gated_metrics": "safety"})
+
+def test_from_dict_warns_on_unknown_keys_with_a_suggestion():
+    with pytest.warns(UserWarning, match=r"alpah.*did you mean 'alpha'"):
+        c = AuditConfig.from_dict({"alpah": 0.01})
+    assert c.alpha == 0.05  # typo ignored, default kept
+
+
+def test_from_dict_warns_on_dash_for_underscore_typo():
+    with pytest.warns(UserWarning, match=r"equivalence-margin.*equivalence_margin"):
+        AuditConfig.from_dict({"equivalence-margin": 0.1})
+
+
+def test_from_dict_strict_raises_listing_unknown_keys():
+    with pytest.raises(ValueError, match=r"alpah"):
+        AuditConfig.from_dict({"alpah": 0.01}, strict=True)
+
+
+def test_explicit_config_path_with_typo_errors(tmp_path):
+    p = tmp_path / "policy.toml"
+    p.write_text("alpah = 0.01\n")
+    with pytest.raises(ValueError, match=r"alpah.*did you mean 'alpha'"):
+        AuditConfig.load(path=str(p))
+
+
+def test_discovered_config_with_typo_warns_but_loads(tmp_path):
+    (tmp_path / ".evaltrust.toml").write_text("alpah = 0.01\nseed = 7\n")
+    with pytest.warns(UserWarning, match=r"alpah"):
+        c = AuditConfig.load(start_dir=str(tmp_path))
+    assert c.seed == 7          # known keys still apply
+    assert c.alpha == 0.05      # the typo didn't silently set alpha

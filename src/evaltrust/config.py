@@ -7,7 +7,9 @@ in ``pyproject.toml``.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field, fields
+from difflib import get_close_matches
 from pathlib import Path
 from types import MappingProxyType
 
@@ -15,6 +17,18 @@ try:  # tomllib is stdlib on 3.11+; tomli is the backport for 3.10
     import tomllib as _toml
 except ModuleNotFoundError:  # pragma: no cover - depends on Python version
     import tomli as _toml
+
+
+def _unknown_keys_message(unknown: list[str], known: set[str]) -> str:
+    """Name each unrecognised config key, with a did-you-mean when one is close."""
+    described = []
+    for key in sorted(unknown):
+        close = get_close_matches(key, sorted(known), n=1)
+        described.append(
+            f"{key!r} (did you mean {close[0]!r}?)" if close else f"{key!r}")
+    plural = "s" if len(described) > 1 else ""
+    return (f"Unknown config key{plural}: {', '.join(described)}. "
+            "The intended setting is NOT applied.")
 
 
 def _validate_weights(weights: dict) -> None:
@@ -104,14 +118,25 @@ class AuditConfig:
         ))
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AuditConfig":
-        """Build a config from a dict, ignoring unknown keys.
+    def from_dict(cls, data: dict, strict: bool = False) -> "AuditConfig":
+        """Build a config from a dict.
+
+        Unknown keys are reported — a typo like ``alpah`` or
+        ``equivalence-margin`` must not silently revert the team's policy to
+        defaults. With ``strict`` they raise ``ValueError``; otherwise they
+        warn and are ignored.
 
         Coerces TOML types to the annotated Python types:
         - ``gated_metrics``: list → frozenset
         - ``metric_weights``: dict → MappingProxyType (with positive-weight validation)
         """
         known = {f.name for f in fields(cls)}
+        unknown = [k for k in data if k not in known]
+        if unknown:
+            message = _unknown_keys_message(unknown, known)
+            if strict:
+                raise ValueError(message)
+            warnings.warn(message, stacklevel=2)
         filtered = {k: v for k, v in data.items() if k in known}
 
         if "gated_metrics" in filtered:
@@ -135,13 +160,15 @@ class AuditConfig:
     def load(cls, path: str | None = None, start_dir: str = ".") -> "AuditConfig":
         """Load config from a file.
 
-        With an explicit ``path``, read that TOML file. Otherwise look in
+        With an explicit ``path``, read that TOML file; unknown keys in it are
+        an error, since the file was named on purpose. Otherwise look in
         ``start_dir`` for ``.evaltrust.toml`` first, then a ``[tool.evaltrust]``
-        table in ``pyproject.toml``. Falls back to defaults when none is found.
+        table in ``pyproject.toml``; there unknown keys warn but don't fail.
+        Falls back to defaults when none is found.
         """
         if path is not None:
             with open(path, "rb") as fh:
-                return cls.from_dict(_toml.load(fh))
+                return cls.from_dict(_toml.load(fh), strict=True)
 
         base = Path(start_dir)
         dedicated = base / ".evaltrust.toml"

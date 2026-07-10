@@ -15,6 +15,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Config typos are no longer silently ignored.** An unknown key in the config
+  (`alpah`, or `equivalence-margin` with a dash) previously reverted the
+  intended setting to its default with no signal. An explicit `--config` file
+  now fails with the unknown key named and a did-you-mean suggestion; a
+  discovered `.evaltrust.toml` / `[tool.evaltrust]` warns and ignores it.
+
 - **Two-file pairing no longer hides dropped data.** Pairing two single-model
   files now carries both files' `skipped_rows` counts forward and counts every
   example that appears in only one file (or lacks a score) as
