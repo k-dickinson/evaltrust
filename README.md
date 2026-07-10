@@ -307,3 +307,5 @@ EvalTrust is released under the [MIT License](LICENSE) - a permissive,
 OSI-approved license. Anyone, including companies and organizations, may use,
 modify, and distribute it, in commercial or proprietary settings, free of charge.
 There is no copyleft obligation and no contributor license agreement to sign.
+
+Sample MD report: [docs/sample-md-report.md](docs/sample-md-report.md).
