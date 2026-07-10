@@ -198,12 +198,29 @@ def test_lm_eval_reserves_every_field_emitted_by_serializer():
         "prompt_hash": 1,
         "target_hash": 1,
         "task_metric": 0.25,
+        "incidental_number": 17,
     }
 
     records, _ = LMEvalAdapter().parse_lines([row], path=Path("samples_task.jsonl"))
 
     assert [(record.metric, record.score) for record in records] == [
         ("task_metric", 0.25)
+    ]
+
+
+def test_lm_eval_falls_back_to_non_reserved_fields_without_metrics_list():
+    row = {
+        "doc_id": 4,
+        "resps": [["answer"]],
+        "task_metric": 0.5,
+        "legacy_numeric_field": 12,
+    }
+
+    records, _ = LMEvalAdapter().parse_lines([row], path=Path("samples_task.jsonl"))
+
+    assert [(record.metric, record.score) for record in records] == [
+        ("task_metric", 0.5),
+        ("legacy_numeric_field", 12.0),
     ]
 
 

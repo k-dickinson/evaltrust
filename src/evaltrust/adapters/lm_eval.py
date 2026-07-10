@@ -9,7 +9,7 @@ from .common import Record, coerce_score
 
 
 # lm_eval/evaluator.py builds these fields before evaluation_tracker.py writes
-# each sample. All other numeric-coercible fields are task-defined metrics.
+# each sample. Its ``metrics`` list names the task-defined metric fields.
 _RESERVED_FIELDS = {
     "doc_id",
     "doc",
@@ -64,9 +64,16 @@ class LMEvalAdapter:
             if doc_id is None:
                 skipped += 1
                 continue
-            for metric, raw in row.items():
+            declared_metrics = row.get("metrics")
+            metric_fields = (
+                declared_metrics
+                if isinstance(declared_metrics, list)
+                else row.keys()
+            )
+            for metric in metric_fields:
                 if metric in _RESERVED_FIELDS:
                     continue
+                raw = row.get(metric)
                 try:
                     score = coerce_score(raw)
                 except ValueError:
