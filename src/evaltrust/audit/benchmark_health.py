@@ -22,6 +22,7 @@ def audit_benchmark_health(
     models: list[str] | None = None,
     saturation_fraction: float = SATURATION_FRACTION,
     min_spread: float = MIN_SPREAD,
+    score_ceiling: float | None = None,
 ) -> list[Finding]:
     models = models or data.models
     per_model = {
@@ -32,17 +33,21 @@ def audit_benchmark_health(
     pooled = np.concatenate([v for v in per_model.values() if v.size])
 
     return [
-        _saturation(per_model, pooled, saturation_fraction),
+        _saturation(per_model, pooled, saturation_fraction, score_ceiling),
         _discrimination(pooled, min_spread),
     ]
 
 
-def _saturation(per_model, pooled, saturation_fraction) -> Finding:
-    ceiling = float(pooled.max())
+def _saturation(per_model, pooled, saturation_fraction, score_ceiling=None) -> Finding:
+    observed_max = float(pooled.max())
+    ceiling_is_configured = score_ceiling is not None
+    ceiling = float(score_ceiling) if ceiling_is_configured else observed_max
     top_mean = max(float(v.mean()) for v in per_model.values() if v.size)
     frac = (top_mean / ceiling) if ceiling > 0 else 0.0
+    display_frac = min(frac,1.0) if ceiling_is_configured else frac
     saturated = ceiling > 0 and frac >= saturation_fraction
 
+    ceiling_source = "configured" if ceiling_is_configured else "observed"
     return Finding(
         pillar=PILLAR,
         title="Benchmark is saturated" if saturated else "Benchmark has headroom",
@@ -53,8 +58,8 @@ def _saturation(per_model, pooled, saturation_fraction) -> Finding:
             "dominated by noise and label errors."
         ),
         how_detected=(
-            f"The strongest model averaged {top_mean:.3f} against a ceiling of "
-            f"{ceiling:.3f} ({frac:.0%} of maximum)."
+            f"The strongest model averaged {top_mean:.3f} against a {ceiling_source} "
+            f"ceiling of {ceiling:.3f} ({display_frac:.0%} of maximum)."
         ),
         how_to_fix=(
             "Switch to a harder benchmark. Gains at the ceiling rarely transfer."
@@ -62,6 +67,7 @@ def _saturation(per_model, pooled, saturation_fraction) -> Finding:
             "There is room to distinguish models on this benchmark."
         ),
         details={"check": "saturation", "ceiling": ceiling,
+                 "ceiling_source": ceiling_source, "observed_max": observed_max,
                  "top_mean": top_mean, "fraction_of_ceiling": frac,
                  "saturated": saturated},
     )

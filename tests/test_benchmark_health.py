@@ -56,3 +56,56 @@ def test_findings_obey_golden_rule():
     for f in findings:
         assert f.why.strip() and f.how_detected.strip() and f.how_to_fix.strip()
         assert f.pillar == "Benchmark Health"
+
+
+# --- score_ceiling tests (issue #54) ---
+
+def make_rubric_data(a_scores, b_scores):
+    """Helper for rubric-scale (e.g. 0-5) data where scores aren't 0/1."""
+    examples = [
+        Example(id=str(i), scores={"A": float(a), "B": float(b)})
+        for i, (a, b) in enumerate(zip(a_scores, b_scores))
+    ]
+    return EvalData(models=["A", "B"], examples=examples,
+                    source_format="test", metadata={})
+
+
+def test_configured_ceiling_prevents_false_saturation_warning():
+    # On a 0-5 rubric, top_mean=4.0 and observed max=4.2 → 95% of observed → WARN.
+    # But relative to the true ceiling of 5.0, that is only 80% → should PASS.
+    a = [4.2] + [4.0] * 49  # observed max 4.2, mean 4.004
+    b = [4.0] * 50           # mean 4.0
+    data = make_rubric_data(a, b)
+
+    sat_no_ceiling = by_check(audit_benchmark_health(data), "saturation")
+    assert sat_no_ceiling.status is Status.WARN, (
+        "Without a ceiling the observed-max heuristic should fire here"
+    )
+
+    sat_with_ceiling = by_check(
+        audit_benchmark_health(data, score_ceiling=5.0), "saturation"
+    )
+    assert sat_with_ceiling.status is Status.PASS, (
+        "With score_ceiling=5.0, 4.0/5.0=80% is below the 95% threshold"
+    )
+
+
+def test_configured_ceiling_recorded_in_details():
+    a = [4.0] * 50
+    b = [3.5] * 50
+    data = make_rubric_data(a, b)
+
+    sat = by_check(audit_benchmark_health(data, score_ceiling=5.0), "saturation")
+    assert sat.details["ceiling"] == 5.0
+    assert sat.details["ceiling_source"] == "configured"
+    assert sat.details["observed_max"] == 4.0
+
+
+def test_no_ceiling_uses_observed_max_and_labels_it():
+    a = [0.9, 1.0] * 25
+    b = [0.8, 0.9] * 25
+    data = make_rubric_data(a, b)
+
+    sat = by_check(audit_benchmark_health(data), "saturation")
+    assert sat.details["ceiling_source"] == "observed"
+    assert sat.details["ceiling"] == sat.details["observed_max"]

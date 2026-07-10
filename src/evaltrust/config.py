@@ -62,6 +62,9 @@ class AuditConfig:
     precision_margin: float = 0.05          # target CI half-width for a single score
     saturation_fraction: float = 0.95       # mean/ceiling that counts as saturated
     min_spread: float = 0.01                # pooled std below which no discrimination
+    # True upper bound of the score scale (e.g. 5.0 for a 0-5 rubric).
+    # When None (default), saturation is measured against the observed maximum.
+    score_ceiling: float | None = None
     judge_agreement_threshold: float = 0.8  # inter-judge and binary calibration floor
     judge_correlation_threshold: float = 0.8  # continuous calibration Spearman floor
     reference_judge: str | None = None      # judge treated as ground truth (else auto)
@@ -88,6 +91,13 @@ class AuditConfig:
         else:
             _validate_weights(dict(self.metric_weights))
 
+        if self.score_ceiling is not None:
+            if not math.isfinite(self.score_ceiling) or self.score_ceiling <= 0:
+                raise ValueError(
+                f"score_ceiling must be a positive number, got {self.score_ceiling!r}. "
+                "Set it to the true upper bound of your score scale (e.g. 5.0 for a 0-5 rubric)."
+            )
+
         if not isinstance(self.gated_metrics, frozenset):
             if isinstance(self.gated_metrics, str):
                 raise ValueError(
@@ -108,6 +118,7 @@ class AuditConfig:
             self.precision_margin,
             self.saturation_fraction,
             self.min_spread,
+            self.score_ceiling,
             self.judge_agreement_threshold,
             self.reference_judge,
             self.n_resamples,

@@ -22,6 +22,7 @@ Drop this in your repo and every audit uses it:
 alpha = 0.01                     # stricter significance than the 0.05 default
 equivalence_margin = 0.02        # what counts as "no real difference", in score units
 judge_agreement_threshold = 0.9  # require 90% inter-judge agreement to pass
+score_ceiling = 5.0              # true max of the rubric (omit for 0/1 benchmarks)
 ```
 
 Or the same under `pyproject.toml`:
@@ -42,6 +43,7 @@ saturation_fraction = 0.9
 | `smallest_meaningful_effect` | `0.2` | Cohen's d worth powering for when recommending more examples. |
 | `precision_margin` | `0.05` | Target confidence-interval half-width for a single-model score. |
 | `saturation_fraction` | `0.95` | Mean-over-ceiling above which a benchmark is "saturated". |
+| `score_ceiling` | *(observed max)* | True upper bound of the score scale (e.g. `5.0` for a 0–5 rubric). When omitted, the saturation check uses the highest observed score as the ceiling, which can produce false warnings on continuous scales where no example scores at the maximum. Set this whenever your rubric has a fixed maximum. |
 | `min_spread` | `0.01` | Pooled score std below which the benchmark can't discriminate. |
 | `judge_agreement_threshold` | `0.8` | Inter-judge and binary judge-vs-gold agreement floor (fraction agreed). |
 | `judge_correlation_threshold` | `0.8` | Continuous judge-vs-gold Spearman rank-correlation floor (rho). |

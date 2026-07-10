@@ -18,6 +18,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Saturation check no longer false-warns on continuous or rubric scales.**
+  `_saturation()` previously divided the top model mean by the highest *observed*
+  score, so a top mean of 4.0 on a 0–5 rubric (observed max 4.2) read as 95% of
+  ceiling and triggered a spurious WARN. A new `score_ceiling` config key (default
+  `None`) lets teams declare the true upper bound; when set, it is used as the
+  denominator instead of the observed max. The default path is unchanged.
+
+
 - **Config typos are no longer silently ignored.** An unknown key in the config
   (`alpah`, or `equivalence-margin` with a dash) previously reverted the
   intended setting to its default with no signal. An explicit `--config` file

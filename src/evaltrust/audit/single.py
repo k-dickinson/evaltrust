@@ -39,7 +39,7 @@ def audit_single(
         findings.append(_threshold(mean, lo, hi, threshold, model))
     findings += audit_benchmark_health(
         data, [model], saturation_fraction=cfg.saturation_fraction,
-        min_spread=cfg.min_spread)
+        min_spread=cfg.min_spread, score_ceiling=cfg.score_ceiling)
     findings += audit_single_repeatability(data, model)
     return findings
 

@@ -164,7 +164,8 @@ def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
         n_resamples=cfg.n_resamples, seed=cfg.seed, significant=significant)
     findings += audit_benchmark_health(
         data, [model_a, model_b],
-        saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread)
+        saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread,
+        score_ceiling=cfg.score_ceiling)
     findings += audit_repeatability(data, model_a, model_b)
     findings += audit_judge_reliability(
         data, model_a, model_b,
