@@ -214,3 +214,67 @@ def test_permutation_matches_scipy_reference():
         n_resamples=9000, random_state=3, alternative="two-sided",
     )
     assert p == pytest.approx(ref.pvalue, abs=0.03)
+
+
+# ---------------------------------------------------------------------------
+# Memory-bounded resampling (issue #79): large evaluations must not allocate an
+# (n_resamples, n) matrix. Chunking the resamples must not change the result.
+# ---------------------------------------------------------------------------
+
+from evaltrust.stats import resampling as _rs
+
+
+def test_chunk_rows_is_a_single_block_for_small_n():
+    # Small n: the whole resample set fits the budget in one block, so the path
+    # is identical (and equal cost) to the original unchunked implementation.
+    assert _rs._chunk_rows(n=100, n_resamples=10_000) == 10_000
+
+
+def test_chunk_rows_bounds_the_working_set_for_large_n():
+    n = 1_000_000
+    rows = _rs._chunk_rows(n=n, n_resamples=10_000)
+    assert rows >= 1
+    assert rows * n <= _rs._MAX_RESAMPLE_CELLS   # peak block is bounded by n
+    assert rows < 10_000                          # and it actually chunked
+
+
+def test_bootstrap_ci_is_bitwise_invariant_to_chunk_size(monkeypatch):
+    # The whole correctness argument: drawing the resamples in blocks from the
+    # same generator reproduces one big block exactly, so a tiny memory budget
+    # (many blocks) gives byte-identical output to one giant block.
+    diffs = np.random.default_rng(11).normal(0.3, 1.0, size=5000)
+    monkeypatch.setattr(_rs, "_MAX_RESAMPLE_CELLS", 10**12)   # one block
+    big = bootstrap_ci(diffs, n_resamples=3000, seed=7)
+    big_bca = bootstrap_ci(diffs, n_resamples=3000, seed=7, method="bca")
+    monkeypatch.setattr(_rs, "_MAX_RESAMPLE_CELLS", 4096)     # one row per block
+    small = bootstrap_ci(diffs, n_resamples=3000, seed=7)
+    small_bca = bootstrap_ci(diffs, n_resamples=3000, seed=7, method="bca")
+    assert big == small          # exact equality, not approx
+    assert big_bca == small_bca
+
+
+def test_permutation_is_bitwise_invariant_to_chunk_size(monkeypatch):
+    diffs = np.random.default_rng(12).normal(0.2, 1.0, size=4000)
+    monkeypatch.setattr(_rs, "_MAX_RESAMPLE_CELLS", 10**12)
+    big = permutation_test(diffs, n_resamples=3000, seed=5)
+    monkeypatch.setattr(_rs, "_MAX_RESAMPLE_CELLS", 4096)
+    small = permutation_test(diffs, n_resamples=3000, seed=5)
+    assert big == small
+
+
+def test_large_n_bootstrap_completes_within_bounded_memory():
+    # Unchunked this would allocate a 3000 x 200_000 matrix (~4.8 GB) and OOM.
+    # The chunked path caps the block, so it must complete with a valid interval.
+    n = 200_000
+    diffs = np.random.default_rng(0).normal(0.1, 1.0, size=n)
+    assert _rs._chunk_rows(n, 3000) * n <= _rs._MAX_RESAMPLE_CELLS
+    lo, hi = bootstrap_ci(diffs, n_resamples=3000, seed=0)
+    assert np.isfinite(lo) and np.isfinite(hi)
+    assert lo < diffs.mean() < hi
+
+
+def test_large_n_permutation_completes_within_bounded_memory():
+    n = 200_000
+    diffs = np.random.default_rng(1).normal(0.0, 1.0, size=n)
+    p = permutation_test(diffs, n_resamples=3000, seed=0)
+    assert 0.0 <= p <= 1.0

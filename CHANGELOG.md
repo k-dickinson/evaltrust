@@ -19,6 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `0.8`, so output is unchanged until you set them apart.
 
 ### Fixed
+- **Resampling no longer exhausts memory on large evaluations.** `bootstrap_ci`
+  and `permutation_test` built an `(n_resamples, n)` matrix, which OOMs on large
+  inputs (e.g. n = 1M at 10k resamples needed ~160 GB). Resamples are now drawn in
+  memory-bounded blocks, capping peak memory regardless of n. Because each block
+  is drawn from the same generator, output is byte-identical to before at every
+  size (verified against the previous results and scipy). Fixes #79.
 - **Judge consensus no longer nan-compares when a judge scored only one model.**
   `_consensus()` called `np.mean([])` → `nan` when a judge had results for only
   one of the two models; `nan >= nan` is `False`, silently defaulting the winner
