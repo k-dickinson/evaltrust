@@ -9,6 +9,10 @@ def finding(status, title="f"):
                    why="w", how_detected="h", how_to_fix="x", details={})
 
 
+def test_verdict_level_string_uses_its_friendly_value():
+    assert str(VerdictLevel.HIGH) == "High Confidence"
+
+
 def test_all_pass_is_high_confidence():
     v = compute_verdict([finding(Status.PASS), finding(Status.PASS)])
     assert v.level is VerdictLevel.HIGH

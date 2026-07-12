@@ -23,6 +23,9 @@ class Status(Enum):
     FAIL = "fail"    # the conclusion is not supported by the evidence
     SKIP = "skip"    # the data needed for this check is absent
 
+    def __str__(self) -> str:
+        return self.value
+
 
 class Preference(Enum):
     """A non-model outcome for a pairwise preference judgment."""
