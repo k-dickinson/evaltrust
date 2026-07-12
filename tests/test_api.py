@@ -6,6 +6,8 @@ experiment trackers, not just read a terminal box. This is that surface.
 
 import json
 
+import pytest
+
 from evaltrust import audit, audit_suite
 from evaltrust.audit.runner import AuditReport
 from evaltrust.audit.suite import SuiteReport
@@ -26,6 +28,13 @@ def test_audit_accepts_an_evaldata_object():
     report = audit(make_data({"A": [0] * 200, "B": [1] * 180 + [0] * 20}, 200))
     assert isinstance(report, AuditReport)
     assert report.verdict.level.name == "HIGH"
+
+
+def test_audit_unknown_model_lists_available_models():
+    data = make_data({"A": [0, 1], "B": [1, 0]}, 2)
+
+    with pytest.raises(ValueError, match=r"Available models: A, B"):
+        audit(data, model_a="typo", model_b="B")
 
 
 def test_audit_accepts_a_file_path(tmp_path):

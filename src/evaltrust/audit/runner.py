@@ -177,7 +177,7 @@ def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
         raise ValueError(
             f"No examples have scores for both '{model_a}' and '{model_b}', so "
             "there's nothing to compare. Check the models and provide scores or "
-            "preferences.")
+            f"preferences. Available models: {', '.join(data.models)}.")
 
     findings: list[Finding] = []
     for quality in (_data_quality(data), _pairing_coverage(data)):
