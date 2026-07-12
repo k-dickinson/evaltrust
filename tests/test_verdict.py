@@ -14,6 +14,10 @@ def test_all_pass_is_high_confidence():
     assert v.level is VerdictLevel.HIGH
 
 
+def test_verdict_level_str_is_the_friendly_value():
+    assert str(VerdictLevel.HIGH) == "High Confidence"
+
+
 def test_any_warning_drops_to_moderate():
     v = compute_verdict([finding(Status.PASS), finding(Status.WARN)])
     assert v.level is VerdictLevel.MODERATE
