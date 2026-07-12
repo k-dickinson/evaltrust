@@ -6,6 +6,7 @@ experiment trackers, not just read a terminal box. This is that surface.
 
 import json
 
+import evaltrust
 from evaltrust import audit, audit_suite
 from evaltrust.audit.runner import AuditReport
 from evaltrust.audit.suite import SuiteReport
@@ -19,6 +20,11 @@ def make_data(scores_by_model, n):
     ]
     return EvalData(models=list(scores_by_model), examples=examples,
                     source_format="test", metadata={})
+
+
+def test_package_exposes_version_string():
+    assert isinstance(evaltrust.__version__, str)
+    assert evaltrust.__version__
 
 
 def test_audit_accepts_an_evaldata_object():

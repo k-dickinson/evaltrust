@@ -57,6 +57,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `evaltrust.__version__` now exposes the installed package version from Python.
+
 - **LangSmith adapter:** read a LangSmith run export directly — one
   experiment/model per file, scored from each run's `feedback_stats.<key>.avg`
   (averaged across metrics). One model per run; compare two runs.
