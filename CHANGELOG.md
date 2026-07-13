@@ -19,6 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `0.8`, so output is unchanged until you set them apart.
 
 ### Fixed
+- **`_err` now writes to stderr, not stdout (#51).** `Console(stderr=False)`
+  caused all CLI error messages (load failures, config errors, unrecognised
+  format, non-zero exits) to pollute stdout — corrupting `--json` output and
+  hiding failures from anything scraping stderr. Fixed to `Console(stderr=True)`.
+  Three CLI tests updated to assert on `result.stderr` instead of `result.stdout`.
+
 - **Resampling no longer exhausts memory on large evaluations.** `bootstrap_ci`
   and `permutation_test` built an `(n_resamples, n)` matrix, which OOMs on large
   inputs (e.g. n = 1M at 10k resamples needed ~160 GB). Resamples are now drawn in

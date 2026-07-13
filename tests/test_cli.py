@@ -89,7 +89,7 @@ def test_audit_prints_report_and_exits_zero(tmp_path):
 def test_missing_file_exits_nonzero_with_message(tmp_path):
     result = runner.invoke(app, ["audit", str(tmp_path / "nope.json")])
     assert result.exit_code != 0
-    assert "No such" in result.stdout or "not" in result.stdout.lower()
+    assert "No such" in result.output or "not" in result.output.lower()
 
 
 def test_unknown_format_exits_nonzero(tmp_path):
@@ -221,7 +221,7 @@ def test_two_multi_model_files_error_helpfully(tmp_path):
     f = write(tmp_path, "multi.json", raw)
     result = runner.invoke(app, ["audit", f, f])
     assert result.exit_code == 2
-    assert "one model per file" in result.stdout.lower()
+    assert "one model per file" in result.output.lower()
 
 
 def test_three_files_rejected(tmp_path):
@@ -324,4 +324,4 @@ def test_config_typo_in_explicit_config_is_an_error(tmp_path):
     result = runner.invoke(app, ["audit", noise_file(tmp_path),
                                  "--config", str(policy)])
     assert result.exit_code == 2
-    assert "alpah" in result.stdout
+    assert "alpah" in result.output

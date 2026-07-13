@@ -42,7 +42,7 @@ from .report.terminal import (
 app = typer.Typer(
     add_completion=False,
     help="Check whether an eval's result is real or just noise.")
-_err = Console(stderr=False)  # keep errors on stdout so they're easy to capture
+_err = Console(stderr=True)   # errors go to stderr, not stdout (#51)
 # Diagnostics that must never mix into machine-readable stdout (e.g. a warning
 # emitted alongside --json output) go here, on real stderr.
 _warn = Console(stderr=True)
