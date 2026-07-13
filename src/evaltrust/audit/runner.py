@@ -8,6 +8,7 @@ import numpy as np
 
 from ..config import AuditConfig
 from ..core.schema import EvalData, Finding, Status
+from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
 from .judge_reliability import audit_judge_reliability
@@ -47,6 +48,8 @@ class AuditReport:
         """A JSON-serializable representation of the whole audit."""
         models = [self.model_a] if self.is_single else [self.model_a, self.model_b]
         return {
+            "schema_version": SCHEMA_VERSION,
+            "methodology_version": METHODOLOGY_VERSION,
             "models": models,
             "model_a": self.model_a,
             "model_b": self.model_b,

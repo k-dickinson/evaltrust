@@ -16,6 +16,7 @@ from .audit.runner import AuditReport, run_audit
 from .audit.suite import SuiteReport
 from .audit.verdict import UntrustworthyError, Verdict, VerdictLevel
 from .core.schema import EvalData, Example, Finding, Preference, Status
+from .versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 
 try:
     __version__ = version("evaltrust")
@@ -24,6 +25,8 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "SCHEMA_VERSION",
+    "METHODOLOGY_VERSION",
     "audit",
     "audit_suite",
     "run_audit",

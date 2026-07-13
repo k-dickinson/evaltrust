@@ -16,6 +16,7 @@ import numpy as np
 from ..config import AuditConfig
 from ..core.schema import EvalData, Finding
 from ..stats.multiplicity import holm_bonferroni
+from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 from .runner import AuditReport, run_audit
 from .verdict import VerdictLevel, enforce_level
 
@@ -72,6 +73,8 @@ class SuiteReport:
 
     def to_dict(self) -> dict:
         return {
+            "schema_version": SCHEMA_VERSION,
+            "methodology_version": METHODOLOGY_VERSION,
             "overall_level": self.overall_level.name,
             "alpha": self.alpha,
             "corrected_alpha": self.corrected_alpha,

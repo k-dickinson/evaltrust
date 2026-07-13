@@ -21,6 +21,7 @@ import typer
 from rich.console import Console
 
 from .adapters.registry import UnknownFormatError
+from .versions import SCHEMA_VERSION
 from .audit.runner import run_audit
 from .audit.suite import audit_suite
 from .audit.verdict import _LEVEL_RANK, VerdictLevel, coerce_level
@@ -232,7 +233,8 @@ def diff(
 
     if as_json:
         typer.echo(json.dumps(
-            {"regression": result.has_regression,
+            {"schema_version": SCHEMA_VERSION,
+             "regression": result.has_regression,
              "changes": [vars(c) for c in result.changes]}, indent=2))
     elif plain:
         typer.echo(render_diff_plain(result), nl=False)

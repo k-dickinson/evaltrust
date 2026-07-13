@@ -9,6 +9,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **lm-eval model names from sibling results files.** When a `results_*.json`
   sits next to a samples log, the adapter uses its top-level `model_name`
   instead of inferring the name from the samples filename.
+- **Versioned JSON output.** Every machine-readable payload (`audit --json`,
+  `audit_suite`, `diff --json`, and `to_dict()`) now carries a `schema_version`
+  (the output shape) and, for audits, a `methodology_version` (the audit methods
+  and thresholds that produced the verdict), also exposed as
+  `evaltrust.SCHEMA_VERSION` / `evaltrust.METHODOLOGY_VERSION`. Downstream tooling
+  can pin to these instead of guessing.
 - **Line-format adapters.** JSONL ingest can detect specific row formats before
   falling through to the existing generic record path; lm-eval sample logs are
   the first supported format.
