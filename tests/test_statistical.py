@@ -293,3 +293,64 @@ def test_equivalence_ci_and_decision_prose_share_the_reported_alpha():
     assert dec.details["outcome"] == "equivalent"
     assert dec.details["alpha"] == 0.025
     assert "95%" in dec.how_detected      # round((1 - 2*0.025) * 100) == 95
+
+
+# ---------------------------------------------------------------------------
+# cluster-aware statistical audit (issue #83)
+# ---------------------------------------------------------------------------
+from evaltrust.core.schema import EvalData, Example
+from evaltrust.audit.statistical import audit_statistical_validity
+
+
+def _clustered_eval(n_clusters=10, cluster_size=5, effect=0.3):
+    import numpy as np
+    rng = np.random.default_rng(42)
+    examples = []
+    i = 0
+    for c in range(n_clusters):
+        for _ in range(cluster_size):
+            a = float(rng.normal(0.0, 0.5))
+            b = float(rng.normal(effect, 0.5))
+            examples.append(
+                Example(id=str(i), scores={"A": a, "B": b}, group_id=f"g{c}")
+            )
+            i += 1
+    return EvalData(models=["A", "B"], examples=examples, source_format="test")
+
+
+def _unclustered_eval(n=50, effect=0.3):
+    import numpy as np
+    rng = np.random.default_rng(42)
+    examples = []
+    for i in range(n):
+        a = float(rng.normal(0.0, 0.5))
+        b = float(rng.normal(effect, 0.5))
+        examples.append(Example(id=str(i), scores={"A": a, "B": b}))
+    return EvalData(models=["A", "B"], examples=examples, source_format="test")
+
+
+def test_clustered_audit_runs_without_error():
+    data = _clustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    assert len(findings) == 3
+
+
+def test_clustered_audit_uses_cluster_test_name():
+    data = _clustered_eval(effect=1.0)
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "cluster" in decision.how_detected.lower()
+
+
+def test_unclustered_audit_mentions_independence_assumption():
+    data = _unclustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "independent" in decision.how_detected.lower()
+
+
+def test_clustered_audit_decision_finding_has_test_key():
+    data = _clustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "test" in decision.details

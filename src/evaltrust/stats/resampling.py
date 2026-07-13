@@ -188,6 +188,74 @@ def bootstrap_statistic_ci(
         hi = float(np.percentile(estimates, hi_pct, method="higher"))
     return lo, hi
 
+def bootstrap_ci_clustered(
+    cluster_diffs: list[np.ndarray],
+    confidence: float = 0.95,
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Bootstrap CI that resamples whole clusters, not individual rows.
+
+    Each resample draws ``len(cluster_diffs)`` clusters with replacement and
+    pools their differences, then takes the mean. This preserves within-cluster
+    correlation so the interval reflects between-cluster variance.
+    """
+    if not cluster_diffs:
+        raise ValueError("bootstrap_ci_clustered requires at least one cluster")
+
+    rng = np.random.default_rng(seed)
+    k = len(cluster_diffs)
+    boot_means = np.empty(n_resamples, dtype=float)
+    for i in range(n_resamples):
+        chosen = rng.integers(0, k, size=k)
+        pooled = np.concatenate([cluster_diffs[j] for j in chosen])
+        boot_means[i] = float(pooled.mean())
+
+    alpha = 1.0 - confidence
+    lo = float(np.percentile(boot_means, 100 * alpha / 2))
+    hi = float(np.percentile(boot_means, 100 * (1.0 - alpha / 2)))
+    return lo, hi
+
+
+def permutation_test_clustered(
+    cluster_diffs: list[np.ndarray],
+    n_resamples: int = 10_000,
+    seed: int = 0,
+) -> float:
+    """Cluster-aware permutation test: permute cluster labels, not rows.
+
+    Each permutation randomly flips the sign of each cluster's differences
+    (equivalent to reassigning which model is A and which is B for that
+    cluster). The p-value is the fraction of permutations whose |mean| is
+    at least as large as the observed |mean|, with the (count+1)/(N+1)
+    correction so it is never exactly 0.
+    """
+    if not cluster_diffs:
+        raise ValueError(
+            "permutation_test_clustered requires at least one cluster"
+        )
+
+    all_diffs = np.concatenate(cluster_diffs)
+    observed = abs(float(all_diffs.mean()))
+
+    # Precompute per-cluster means so each permutation is O(k) not O(n).
+    cluster_means = np.array(
+        [float(c.mean()) for c in cluster_diffs], dtype=float
+    )
+    cluster_sizes = np.array([len(c) for c in cluster_diffs], dtype=float)
+    total_n = float(cluster_sizes.sum())
+
+    rng = np.random.default_rng(seed)
+    k = len(cluster_diffs)
+    count = 0
+    for _ in range(n_resamples):
+        signs = rng.choice(np.array([-1.0, 1.0]), size=k)
+        perm_mean = abs(
+            float(np.sum(signs * cluster_means * cluster_sizes)) / total_n
+        )
+        if perm_mean >= observed:
+            count += 1
+    return (count + 1) / (n_resamples + 1)
 
 def permutation_test(
     differences: np.ndarray,

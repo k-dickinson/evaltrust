@@ -18,7 +18,13 @@ from ..stats.effect import (
 )
 from ..stats.paired import mcnemar_exact
 from ..stats.power import minimum_detectable_effect, required_n
-from ..stats.resampling import bootstrap_ci, bootstrap_statistic_ci, permutation_test
+from ..stats.resampling import (
+    bootstrap_ci,
+    bootstrap_ci_clustered,
+    bootstrap_statistic_ci,
+    permutation_test,
+    permutation_test_clustered,
+)
 
 PILLAR = "Statistical Validity"
 
@@ -53,6 +59,13 @@ def audit_statistical_validity(
         leader, trailer, diffs = model_a, model_b, -raw
 
     binary = _is_binary(data, model_a, model_b)
+    clustered = data.has_clusters
+    cluster_note = (
+        " (examples treated as independent — supply a group_id per example "
+        "to enable cluster-aware resampling)"
+        if not clustered
+        else ""
+    )
 
     # --- significance ---
     if binary:
@@ -60,18 +73,31 @@ def audit_statistical_validity(
         p = mcnemar_exact(b_only, a_only)
         test_name = "McNemar's exact test"
         test_detail = (f"{b_only + a_only} discordant pairs "
-                       f"({b_only} for {leader}, {a_only} for {trailer})")
+                       f"({b_only} for {leader}, {a_only} for {trailer})"
+                       + cluster_note)
+    elif clustered:
+        clusters = data.cluster_groups(leader, trailer)
+        p = permutation_test_clustered(clusters, n_resamples=n_resamples, seed=seed)
+        k = len(clusters)
+        test_name = "a cluster-aware paired permutation test"
+        test_detail = f"{n} paired examples across {k} clusters"
     else:
         p = permutation_test(diffs, n_resamples=n_resamples, seed=seed)
         test_name = "a paired permutation test"
-        test_detail = f"{n} paired examples"
+        test_detail = f"{n} paired examples{cluster_note}"
     # Strict `p < alpha` unless a multiplicity procedure supplied the decision.
     if significant is None:
         significant = p < alpha
 
     # --- confidence interval (leader-minus-trailer) ---
-    lo, hi = bootstrap_ci(diffs, confidence=confidence,
-                          n_resamples=n_resamples, seed=seed)
+    if clustered and not binary:
+        clusters = data.cluster_groups(leader, trailer)
+        lo, hi = bootstrap_ci_clustered(
+            clusters, confidence=confidence, n_resamples=n_resamples, seed=seed
+        )
+    else:
+        lo, hi = bootstrap_ci(diffs, confidence=confidence,
+                              n_resamples=n_resamples, seed=seed)
 
     # --- equivalence (TOST): (1 - 2*alpha) CI on the signed gap inside the margin ---
     eq_lo, eq_hi = bootstrap_ci(raw, confidence=1 - 2 * alpha,

@@ -102,3 +102,75 @@ def test_to_dict_serializes_non_finite_floats_as_null(bad):
     # The whole payload must round-trip through a strict JSON parser.
     text = json.dumps(f.to_dict(), allow_nan=False)
     json.loads(text)
+
+
+# ---------------------------------------------------------------------------
+# cluster-aware schema helpers
+# ---------------------------------------------------------------------------
+from evaltrust.core.schema import EvalData, Example
+
+
+def _make_clustered_data():
+    return EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="1", scores={"A": 0.0, "B": 1.0}, group_id="g1"),
+            Example(id="2", scores={"A": 1.0, "B": 0.0}, group_id="g1"),
+            Example(id="3", scores={"A": 0.0, "B": 1.0}, group_id="g2"),
+            Example(id="4", scores={"A": 0.5, "B": 0.5}, group_id="g2"),
+        ],
+        source_format="test",
+    )
+
+
+def test_has_clusters_true_when_group_id_present():
+    data = _make_clustered_data()
+    assert data.has_clusters is True
+
+
+def test_has_clusters_false_when_no_group_id():
+    data = EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="1", scores={"A": 0.0, "B": 1.0}),
+            Example(id="2", scores={"A": 1.0, "B": 0.0}),
+        ],
+        source_format="test",
+    )
+    assert data.has_clusters is False
+
+
+def test_cluster_groups_returns_correct_number_of_clusters():
+    data = _make_clustered_data()
+    groups = data.cluster_groups("A", "B")
+    assert len(groups) == 2
+
+
+def test_cluster_groups_values_match_differences():
+    import numpy as np
+    data = _make_clustered_data()
+    groups = data.cluster_groups("A", "B")
+    all_diffs = np.concatenate(groups)
+    expected = data.differences("A", "B")
+    assert np.allclose(sorted(all_diffs), sorted(expected))
+
+
+def test_cluster_groups_singleton_without_group_id():
+    """Examples without group_id each form their own cluster."""
+    import numpy as np
+    data = EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="x", scores={"A": 0.0, "B": 1.0}),
+            Example(id="y", scores={"A": 1.0, "B": 0.5}),
+        ],
+        source_format="test",
+    )
+    groups = data.cluster_groups("A", "B")
+    assert len(groups) == 2
+    assert all(len(g) == 1 for g in groups)
+
+
+def test_example_group_id_defaults_to_none():
+    ex = Example(id="z", scores={"A": 1.0})
+    assert ex.group_id is None

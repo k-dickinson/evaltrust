@@ -36,9 +36,14 @@ class Example:
 
     ``scores`` maps model -> final score. The optional fields carry the extra
     evidence that unlocks more checks:
-      - ``runs``:   model -> list of scores from repeated evaluations.
-      - ``judges``: judge -> {model -> score} when several judges scored the item.
+      - ``runs``:     model -> list of scores from repeated evaluations.
+      - ``judges``:   judge -> {model -> score} when several judges scored the item.
       - ``preferences``: judge -> winning model id, or ``Preference.TIE``.
+      - ``group_id``: optional cluster / group label. When present, resampling
+                      draws whole clusters instead of individual rows so that
+                      within-cluster correlation is preserved. Examples without a
+                      ``group_id`` are treated as independent (the standard
+                      assumption).
       - ``attributes``: free-form tags for slicing (e.g. category, difficulty,
         language). Values are stored as strings.
     """
@@ -48,6 +53,7 @@ class Example:
     runs: dict[str, list[float]] | None = None
     judges: dict[str, dict[str, float]] | None = None
     preferences: dict[str, str | Preference] | None = None
+    group_id: str | None = None
     attributes: dict[str, str] | None = None
 
 
@@ -95,6 +101,30 @@ class EvalData:
         """Paired differences ``score_B - score_A`` over shared examples."""
         a, b = self.paired_scores(model_a, model_b)
         return b - a
+
+    @property
+    def has_clusters(self) -> bool:
+        """True when at least one example carries a ``group_id``."""
+        return any(ex.group_id is not None for ex in self.examples)
+
+    def cluster_groups(
+        self, model_a: str, model_b: str
+    ) -> list[np.ndarray]:
+        """Per-cluster arrays of paired differences (score_B - score_A).
+
+        Only examples that have scores for *both* models are included.
+        Clusters are returned in sorted order so the output is deterministic.
+        Examples without a ``group_id`` each form their own singleton cluster,
+        preserving the independent-rows behaviour as a special case.
+        """
+        from collections import defaultdict
+
+        buckets: dict[str, list[float]] = defaultdict(list)
+        for ex in self.examples:
+            if model_a in ex.scores and model_b in ex.scores:
+                key = ex.group_id if ex.group_id is not None else ex.id
+                buckets[key].append(ex.scores[model_b] - ex.scores[model_a])
+        return [np.array(v, dtype=float) for _, v in sorted(buckets.items())]
 
 
 @dataclass(frozen=True)
