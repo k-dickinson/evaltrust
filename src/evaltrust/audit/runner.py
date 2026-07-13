@@ -174,10 +174,11 @@ def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
     preference_only = not has_pair_scores and data.has_preferences
     if differences.size == 0 and not data.has_preferences:
+        available = ", ".join(map(str, data.models)) or "none"
         raise ValueError(
             f"No examples have scores for both '{model_a}' and '{model_b}', so "
             "there's nothing to compare. Check the models and provide scores or "
-            "preferences.")
+            f"preferences. Available models: {available}.")
 
     findings: list[Finding] = []
     for quality in (_data_quality(data), _pairing_coverage(data)):
