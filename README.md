@@ -174,6 +174,8 @@ Useful flags:
 | Flag | Effect |
 |------|--------|
 | `--json` | Emit the full audit as JSON, for CI logic and experiment trackers. |
+| `--md` | Emit the audit as Markdown, for PR comments and docs (sample below). |
+| `--html <path>` | Write a self-contained HTML report (no dependencies) to a file. |
 | `--plain` | Plain ASCII output - safe for Windows terminals, CI logs, and piping to a file. |
 | `--explain` | Show why each flag matters and the numbers behind it. |
 | `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) - gate CI. |
@@ -184,6 +186,40 @@ Useful flags:
 | `--alpha`, `--equivalence-margin`, `--seed` | Statistical knobs (all also settable in config). |
 
 Two saved audits can be compared for regressions with `evaltrust diff old.json new.json`.
+
+<details>
+<summary>Sample <code>--md</code> output (paste into a PR comment)</summary>
+
+`evaltrust audit examples/clean_win.json --md` produces:
+
+```markdown
+# EvalTrust
+
+**B vs A · 200 examples · native**
+
+## High Confidence
+
+The result holds up. You can act on it.
+
+### Statistical Validity
+
+- **[pass]** B is significantly better than A
+- **[pass]** Effect size is large
+- **[pass]** Sample size was sufficient
+
+### Benchmark Health
+
+- **[pass]** Benchmark has headroom
+- **[pass]** Benchmark discriminates between examples
+
+### Repeatability
+
+- **[skip]** Not assessed
+```
+
+Add `--explain` to include the "why it matters" and the numbers behind each line.
+
+</details>
 
 ## Use it standalone, or embed it in your eval
 
