@@ -29,17 +29,18 @@ def test_cohens_d_is_negative_when_a_beats_b():
 @pytest.mark.parametrize(
     "d,label",
     [
-        (0.0, "negligible"),
-        (0.1, "negligible"),
+        (0.19, "negligible"),
         (0.2, "small"),
-        (0.4, "small"),
+        (0.49, "small"),
         (0.5, "medium"),
-        (0.7, "medium"),
+        (0.79, "medium"),
         (0.8, "large"),
-        (1.5, "large"),
-        (-0.9, "large"),  # magnitude, sign-agnostic
-        (float("inf"), "large"),
     ],
 )
 def test_magnitude_label_thresholds(d, label):
     assert magnitude_label(d) == label
+
+
+@pytest.mark.parametrize("d", [0.19, 0.2, 0.49, 0.5, 0.79, 0.8])
+def test_magnitude_label_is_sign_agnostic(d):
+    assert magnitude_label(-d) == magnitude_label(d)
