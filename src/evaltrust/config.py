@@ -70,6 +70,7 @@ class AuditConfig:
     reference_judge: str | None = None      # judge treated as ground truth (else auto)
     n_resamples: int = 10_000               # bootstrap / permutation resamples
     seed: int = 0                           # RNG seed (reproducibility)
+    bayesian: bool = False                  # optional Bayesian paired-comparison view
     correction: str = "bonferroni"          # family correction: bonferroni | holm | none
     all_pairs: bool = False                 # compare every model pair (opt-in)
     # metrics that must reach HIGH; any below HIGH → suite is LOW immediately
@@ -124,6 +125,7 @@ class AuditConfig:
             self.reference_judge,
             self.n_resamples,
             self.seed,
+            self.bayesian,
             self.correction,
             self.all_pairs,
             self.gated_metrics,

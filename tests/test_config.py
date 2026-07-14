@@ -13,6 +13,20 @@ def test_defaults_match_the_documented_values():
     assert c.saturation_fraction == 0.95
     assert c.judge_agreement_threshold == 0.8
     assert c.judge_correlation_threshold == 0.8
+    assert c.bayesian is False
+
+
+def test_bayesian_is_loadable_from_dict_and_toml(tmp_path):
+    assert AuditConfig.from_dict({"bayesian": True}).bayesian is True
+    (tmp_path / ".evaltrust.toml").write_text("bayesian = true\n")
+    assert AuditConfig.load(start_dir=str(tmp_path)).bayesian is True
+
+
+def test_bayesian_participates_in_equality_and_hash():
+    disabled = AuditConfig(bayesian=False)
+    enabled = AuditConfig(bayesian=True)
+    assert disabled != enabled
+    assert hash(disabled) != hash(enabled)
 
 
 def test_from_dict_warns_and_ignores_unknown_keys():

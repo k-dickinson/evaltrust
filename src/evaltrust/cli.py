@@ -89,6 +89,10 @@ def audit(
         help="Largest score gap considered practically negligible (for equivalence)."),
     seed: Optional[int] = typer.Option(
         None, "--seed", help="Seed for reproducible resampling."),
+    bayesian: Optional[bool] = typer.Option(
+        None,
+        "--bayesian/--no-bayesian",
+        help="Add the Bayesian decisive-pair win probability."),
     correction: Optional[str] = typer.Option(
         None, "--correction",
         help="Multiple-comparison correction: bonferroni (default), holm, or none."),
@@ -142,6 +146,7 @@ def audit(
     overrides = {k: v for k, v in (("alpha", alpha),
                                    ("equivalence_margin", equivalence_margin),
                                    ("seed", seed),
+                                   ("bayesian", bayesian),
                                    ("reference_judge", reference_judge),
                                    ("correction", correction),
                                    ("all_pairs", all_pairs))

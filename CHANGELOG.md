@@ -18,6 +18,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declare equivalence over-optimistically.
 
 ### Added
+- **Optional Bayesian paired comparison.** `audit --bayesian` reports the posterior decisive-example win probability and a 95% credible interval without changing the default output or verdict.
 - **Optional all-pairs comparison (`--all-pairs`).** Single-file audits can test
   every declared model pair, correct across the pairs with shared scores, and
   report which distinctions are statistically separable. The default remains

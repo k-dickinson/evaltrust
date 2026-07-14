@@ -245,6 +245,75 @@ def test_config_file_changes_thresholds(tmp_path):
     assert decision["details"]["outcome"] == "equivalent"
 
 
+def _has_bayesian_finding(stdout):
+    payload = json.loads(stdout)
+    return any(
+        finding["details"].get("check") == "bayesian_win_probability"
+        for finding in payload["findings"]
+    )
+
+
+def test_bayesian_flag_enables_the_optional_finding(tmp_path):
+    result = runner.invoke(
+        app, ["audit", clean_win_file(tmp_path), "--bayesian", "--json"]
+    )
+    assert result.exit_code == 0
+    assert _has_bayesian_finding(result.stdout)
+
+
+def test_bayesian_is_off_by_default_in_cli(tmp_path):
+    result = runner.invoke(app, ["audit", clean_win_file(tmp_path), "--json"])
+    assert result.exit_code == 0
+    assert not _has_bayesian_finding(result.stdout)
+
+
+def test_omitted_bayesian_flag_preserves_config_true(tmp_path):
+    policy = tmp_path / "policy.toml"
+    policy.write_text("bayesian = true\n")
+    result = runner.invoke(
+        app,
+        ["audit", clean_win_file(tmp_path), "--config", str(policy), "--json"],
+    )
+    assert result.exit_code == 0
+    assert _has_bayesian_finding(result.stdout)
+
+
+def test_bayesian_flag_overrides_config_false(tmp_path):
+    policy = tmp_path / "policy.toml"
+    policy.write_text("bayesian = false\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            clean_win_file(tmp_path),
+            "--config",
+            str(policy),
+            "--bayesian",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert _has_bayesian_finding(result.stdout)
+
+
+def test_no_bayesian_flag_overrides_config_true(tmp_path):
+    policy = tmp_path / "policy.toml"
+    policy.write_text("bayesian = true\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            clean_win_file(tmp_path),
+            "--config",
+            str(policy),
+            "--no-bayesian",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert not _has_bayesian_finding(result.stdout)
+
+
 def test_bad_config_path_errors(tmp_path):
     result = runner.invoke(app, ["audit", noise_file(tmp_path), "--config",
                                  str(tmp_path / "nope.toml")])
