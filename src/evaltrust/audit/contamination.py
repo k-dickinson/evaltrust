@@ -53,8 +53,16 @@ def _find_near_matches(benchmark: list[str], reference: list[str], exact_matches
         if i in exact_matches:
             continue
         normalized = _normalize_text(text)
+        normalized_len = len(normalized)
         
         for ref_text in normalized_ref_list:
+            ref_len = len(ref_text)
+            
+            if (normalized_len + ref_len) > 0:
+                max_possible_ratio = 2.0 * min(normalized_len, ref_len) / (normalized_len + ref_len)
+                if max_possible_ratio < threshold:
+                    continue
+                    
             similarity = difflib.SequenceMatcher(None, normalized, ref_text).ratio()
             if similarity >= threshold:
                 near_matches.add(i)
@@ -83,13 +91,13 @@ def run_contamination_audit(
     total_items = len(benchmark)
 
     contamination_fraction = (
-        len(exact_matches) / total_items
+        (len(exact_matches) + len(near_matches_indices)) / total_items
         if total_items > 0
         else 0.0
     )
     return ContaminationResult(
         exact_matches = len(exact_matches),
-        near_matches = len(near_matches_indices), #placeholder untill near-duplicate detection is implemented
+        near_matches = len(near_matches_indices),
         total_items = total_items,
         contamination_fraction=contamination_fraction
     )

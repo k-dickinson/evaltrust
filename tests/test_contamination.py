@@ -57,7 +57,7 @@ def test_run_contamination_audit_partial():
     assert result.exact_matches == 2
     assert result.near_matches == 1
     assert result.total_items == 4
-    assert result.contamination_fraction == 2 / 4
+    assert result.contamination_fraction == 3 / 4
 
 
 def test_run_contamination_audit_empty():

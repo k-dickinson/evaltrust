@@ -276,7 +276,8 @@ def contamination(
                     raise typer.Exit(code=2)
         elif suffix == ".jsonl":
             for i, line in enumerate(text.splitlines()):
-                if not line.strip(): continue
+                if not line.strip():
+                    continue
                 row = json.loads(line)
                 if col in row:
                     texts.append(str(row[col]))
@@ -305,9 +306,10 @@ def contamination(
         bench_texts = load_texts(benchmark, column)
         ref_texts = load_texts(reference, column)
     except Exception as e:
-        if isinstance(e, typer.Exit): raise
+        if isinstance(e, typer.Exit):
+            raise
         _err.print(f"[red]Error parsing files: {e}[/red]")
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
     
     result = run_contamination_audit(bench_texts, ref_texts)
     
@@ -320,13 +322,13 @@ def contamination(
     
     frac = result.contamination_fraction * 100
     color = typer.colors.GREEN if frac < 5 else typer.colors.YELLOW if frac < 15 else typer.colors.RED
-    typer.echo(f"Contamination level:   ", nl=False)
+    typer.echo("Contamination level:   ", nl=False)
     typer.secho(f"{frac:.1f}%", fg=color, bold=True)
     typer.echo("")
     
     if frac > 0:
         typer.secho("\nWarning: Overlap detected between benchmark and reference sets.", fg=typer.colors.YELLOW)
-        if frac > 15:
+        if frac >= 15:
             raise typer.Exit(code=1)
 
 
