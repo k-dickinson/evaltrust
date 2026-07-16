@@ -354,3 +354,53 @@ def test_clustered_audit_decision_finding_has_test_key():
     findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
     decision = next(f for f in findings if f.details.get("check") == "decision")
     assert "test" in decision.details
+
+
+def test_clustered_ci_same_sign_and_wider_than_unclustered():
+    """Clustered CI must have same sign as non-clustered CI and be wider.
+
+    On clustered data where B outperforms A, the clustered CI must be
+    positive (leader-minus-trailer > 0), same sign as the non-clustered
+    CI on the same data, and wider (clustering inflates variance).
+    """
+    from evaltrust.core.schema import EvalData, Example
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    examples_clustered = []
+    examples_unclustered = []
+    i = 0
+    for c in range(10):
+        for _ in range(5):
+            a = float(rng.normal(0.0, 0.5))
+            b = float(rng.normal(0.4, 0.5))
+            examples_clustered.append(
+                Example(id=str(i), scores={"A": a, "B": b}, group_id=f"g{c}")
+            )
+            examples_unclustered.append(
+                Example(id=str(i), scores={"A": a, "B": b})
+            )
+            i += 1
+
+    data_c = EvalData(models=["A", "B"], examples=examples_clustered, source_format="test")
+    data_u = EvalData(models=["A", "B"], examples=examples_unclustered, source_format="test")
+
+    findings_c = audit_statistical_validity(data_c, "A", "B", n_resamples=500, seed=0)
+    findings_u = audit_statistical_validity(data_u, "A", "B", n_resamples=500, seed=0)
+
+    dec_c = next(f for f in findings_c if f.details.get("check") == "decision")
+    dec_u = next(f for f in findings_u if f.details.get("check") == "decision")
+
+    lo_c, hi_c = dec_c.details["ci_low"], dec_c.details["ci_high"]
+    lo_u, hi_u = dec_u.details["ci_low"], dec_u.details["ci_high"]
+
+    # Same sign: both CIs should be positive (B > A)
+    assert lo_c > 0, f"Clustered CI lower bound should be positive, got {lo_c}"
+    assert lo_u > 0, f"Unclustered CI lower bound should be positive, got {lo_u}"
+
+    # Clustered interval must be wider than unclustered
+    width_c = hi_c - lo_c
+    width_u = hi_u - lo_u
+    assert width_c > width_u, (
+        f"Clustered CI width {width_c:.4f} should exceed unclustered {width_u:.4f}"
+    )

@@ -97,7 +97,7 @@ def audit_statistical_validity(
 
     # --- confidence interval (leader-minus-trailer) ---
     if clustered and not binary:
-        clusters = data.cluster_groups(leader, trailer)
+        clusters = data.cluster_groups(trailer, leader)
         lo, hi = bootstrap_ci_clustered(
             clusters, confidence=confidence, n_resamples=n_resamples, seed=seed
         )
@@ -111,8 +111,9 @@ def audit_statistical_validity(
     # the significance CI — plain bootstrap_ci would assume independence and
     # produce an interval that is too narrow on clustered data (TOST over-optimism).
     if clustered and not binary:
+        tost_clusters = data.cluster_groups(model_a, model_b)
         eq_lo, eq_hi = bootstrap_ci_clustered(
-            clusters, confidence=1 - 2 * alpha, n_resamples=n_resamples, seed=seed
+            tost_clusters, confidence=1 - 2 * alpha, n_resamples=n_resamples, seed=seed
         )
     else:
         eq_lo, eq_hi = bootstrap_ci(raw, confidence=1 - 2 * alpha,
