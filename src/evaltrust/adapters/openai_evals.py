@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .common import Record, coerce_score
+from .common import Record
 
 
 def _model_from_spec(rows: list[dict]) -> str:
@@ -35,19 +35,15 @@ class OpenAIEvalsAdapter:
     source_format = "openai-evals"
 
     def detect_lines(self, rows: list[dict]) -> bool:
-        if not rows:
-            return False
-        for row in rows:
+        # Require the run-level spec signature (``completion_fns``), the field
+        # unique to an OpenAI Evals log. Generic event keys alone are not enough:
+        # this adapter runs before generic JSONL extraction, so an unrelated
+        # event stream must fall through rather than be claimed and then fail.
+        for row in rows or []:
             if not isinstance(row, dict):
                 continue
             spec = row.get("spec")
-            if isinstance(spec, dict) and (
-                "completion_fns" in spec or "eval_name" in spec
-            ):
-                return True
-            # A per-sample event: unmistakably OpenAI Evals, and distinct from the
-            # generic/lm-eval row shapes.
-            if {"event_id", "sample_id", "type", "data"} <= row.keys():
+            if isinstance(spec, dict) and isinstance(spec.get("completion_fns"), list):
                 return True
         return False
 
@@ -67,14 +63,17 @@ class OpenAIEvalsAdapter:
                 continue
             sample_id = row.get("sample_id")
             data = row.get("data")
-            if sample_id is None or not isinstance(data, dict) or "correct" not in data:
-                skipped += 1             # a grade row we couldn't read
-                continue
-            try:
-                score = coerce_score(data["correct"])
-            except (ValueError, TypeError):
+            # The format contract is ``data.correct: bool``. A missing sample id,
+            # non-dict data, or a non-bool ``correct`` is a grade row we can't
+            # trust, so skip and count it rather than coerce a stray number.
+            if (
+                sample_id is None
+                or not isinstance(data, dict)
+                or not isinstance(data.get("correct"), bool)
+            ):
                 skipped += 1
                 continue
+            score = 1.0 if data["correct"] else 0.0
             records.append(Record(str(sample_id), model, score, metric="accuracy"))
 
         if not records:

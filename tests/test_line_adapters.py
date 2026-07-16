@@ -442,13 +442,15 @@ def test_openai_evals_skips_and_counts_unusable_match_events():
         {"event_id": 1, "sample_id": "s1", "type": "match", "data": {"expected": "x"}},   # no 'correct'
         {"event_id": 2, "sample_id": "s2", "type": "match", "data": "oops"},              # data not a dict
         {"event_id": 3, "type": "match", "data": {"correct": False}},                     # no sample_id
-        {"event_id": 4, "sample_id": "s5", "type": "sampling", "data": {}},               # not a match
+        {"event_id": 4, "sample_id": "s6", "type": "match", "data": {"correct": 0.7}},     # correct not a bool
+        {"event_id": 5, "sample_id": "s5", "type": "sampling", "data": {}},               # not a match
         {"final_report": {"accuracy": 1.0}},                                              # not a match
     ]
     records, metadata = OpenAIEvalsAdapter().parse_lines(rows)
 
     assert [record.example_id for record in records] == ["s0"]
-    assert metadata == {"skipped_rows": 3}           # s1, s2, and the missing-sample_id match
+    # s1, s2, the missing-sample_id match, and the non-bool `correct`.
+    assert metadata == {"skipped_rows": 4}
 
 
 @pytest.mark.parametrize(
@@ -457,6 +459,9 @@ def test_openai_evals_skips_and_counts_unusable_match_events():
         [{"id": "q1", "model": "A", "score": 1}],                    # generic record
         [{"doc_id": 1, "resps": [["A"]], "acc": 1}],                 # lm-eval sample
         [{"event_id": 0, "type": "match", "data": {"correct": 1}}],  # no sample_id, no spec
+        # Event-shaped row with no run-level spec signature: an unrelated event
+        # stream must fall through to generic, not be claimed and then fail.
+        [{"event_id": 0, "sample_id": "s", "type": "match", "data": {"correct": True}}],
     ],
 )
 def test_openai_evals_detection_rejects_other_shapes(rows):
