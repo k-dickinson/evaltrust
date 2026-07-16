@@ -29,16 +29,19 @@ def audit(
     equivalence_margin: float = 0.05,
     threshold: float | None = None,
     seed: int = 0,
+    slice_by: str | None = None,
 ) -> AuditReport:
     """Audit an evaluation and return an :class:`AuditReport`.
 
     ``source`` is a results file (JSON/JSONL/CSV), two single-model files to pair,
     or an :class:`EvalData`. ``model_a`` / ``model_b`` pick or label the two models.
     ``threshold`` is used only for single-model audits; it is ignored for two-model
-    comparisons.
+    comparisons. ``slice_by`` names a per-example attribute; when given, the
+    comparison is also broken down per slice with a Bonferroni correction across
+    slices and any regressing slice is flagged.
     """
     kw = dict(alpha=alpha, equivalence_margin=equivalence_margin,
-              threshold=threshold, seed=seed)
+              threshold=threshold, seed=seed, slice_by=slice_by)
 
     if isinstance(source, EvalData):
         return run_audit(source, model_a=model_a, model_b=model_b, **kw)

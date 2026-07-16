@@ -76,6 +76,21 @@ Reliability checks:
 }
 ```
 
+An optional `attributes` object tags each example for the per-slice comparison
+(`--slice-by <name>`):
+
+```json
+{
+  "id": "q4",
+  "scores": { "gpt-4": 1, "claude-3": 0 },
+  "attributes": { "category": "math", "difficulty": "hard" }
+}
+```
+
+Attributes are currently read only from the nested-JSON adapter. CSV and
+generic record lists don't carry slice tags yet — a dedicated slice column for
+those formats is a possible follow-up.
+
 ### Record lists
 
 A flat list of rows, one per (example, model). Column names are matched flexibly

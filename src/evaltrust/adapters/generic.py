@@ -310,9 +310,19 @@ class NativeNestedAdapter:
                 str(judge): _coerce_preference(winner, known_models)
                 for judge, winner in preferences.items()
             } if preferences else None)
+            raw_attributes = ex.get("attributes")
+            if raw_attributes is not None and not isinstance(raw_attributes, dict):
+                raise ValueError(
+                    "Native example attributes must be a mapping of tag names to values"
+                )
+            attributes = (
+                {str(k): str(v) for k, v in raw_attributes.items()}
+                if raw_attributes else None
+            )
             examples.append(Example(id=str(ex.get("id", i)), scores=scores,
                                     runs=runs, judges=judges,
-                                    preferences=preferences))
+                                    preferences=preferences,
+                                    attributes=attributes))
 
         if raw.get("models"):
             models = [str(m) for m in raw["models"]]

@@ -23,6 +23,9 @@ class Status(Enum):
     FAIL = "fail"    # the conclusion is not supported by the evidence
     SKIP = "skip"    # the data needed for this check is absent
 
+    def __str__(self) -> str:
+        return self.value
+
 
 class Preference(Enum):
     """A non-model outcome for a pairwise preference judgment."""
@@ -39,6 +42,8 @@ class Example:
       - ``runs``:   model -> list of scores from repeated evaluations.
       - ``judges``: judge -> {model -> score} when several judges scored the item.
       - ``preferences``: judge -> winning model id, or ``Preference.TIE``.
+      - ``attributes``: free-form tags for slicing (e.g. category, difficulty,
+        language). Values are stored as strings.
     """
 
     id: str
@@ -46,6 +51,7 @@ class Example:
     runs: dict[str, list[float]] | None = None
     judges: dict[str, dict[str, float]] | None = None
     preferences: dict[str, str | Preference] | None = None
+    attributes: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)

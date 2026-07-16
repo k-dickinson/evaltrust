@@ -15,6 +15,7 @@ from .judge_reliability import audit_judge_reliability
 from .preference import audit_preferences
 from .single import audit_single
 from .repeatability import audit_repeatability
+from .slice import audit_slices
 from .statistical import audit_statistical_validity
 from .verdict import Verdict, VerdictLevel, compute_verdict, enforce_level
 
@@ -137,6 +138,7 @@ def run_audit(
     seed: int = 0,
     threshold: float | None = None,
     config: "AuditConfig | None" = None,
+    slice_by: str | None = None,
     *,
     significant: bool | None = None,
 ) -> AuditReport:
@@ -148,7 +150,8 @@ def run_audit(
     # single-model audits ignore it. Dispatch: two models -> comparison; a
     # threshold or a lone model -> single.
     if model_a is not None and model_b is not None:
-        return _comparison(data, model_a, model_b, cfg, significant=significant)
+        return _comparison(data, model_a, model_b, cfg, significant=significant,
+                           slice_by=slice_by)
     if threshold is not None:
         if data.has_preferences and not any(ex.scores for ex in data.examples):
             raise ValueError(
@@ -162,7 +165,8 @@ def run_audit(
                 "model names in the input or pass model_a and model_b.")
         return _single(data, model_a or data.models[0], None, cfg)
     model_a, model_b = _pick_models(data)
-    return _comparison(data, model_a, model_b, cfg, significant=significant)
+    return _comparison(data, model_a, model_b, cfg, significant=significant,
+                       slice_by=slice_by)
 
 
 def _strongest(data: EvalData) -> str:
@@ -171,7 +175,8 @@ def _strongest(data: EvalData) -> str:
     return max(data.models, key=lambda m: _mean_score(data, m))
 
 
-def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
+def _comparison(data, model_a, model_b, cfg, significant=None,
+                slice_by=None) -> AuditReport:
     differences = data.differences(model_a, model_b)
     has_pair_scores = any(
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
@@ -256,6 +261,30 @@ def _comparison(data, model_a, model_b, cfg, significant=None) -> AuditReport:
             data, model_a, model_b, alpha=cfg.alpha,
             n_resamples=cfg.n_resamples, seed=cfg.seed,
             significant=significant if preference_only else None)
+
+    if slice_by is not None:
+        if differences.size:
+            findings += audit_slices(
+                data, model_a, model_b, slice_by, alpha=cfg.alpha,
+                n_resamples=cfg.n_resamples, seed=cfg.seed,
+                overall_mean_diff=float(differences.mean()))
+        else:
+            findings.append(_score_skip(
+                "Per-slice Comparison",
+                "slice_comparison",
+                (
+                    "Preference-only data has no paired model scores to "
+                    "compare per slice."
+                    if preference_only else
+                    "No examples contain scores for both selected models, so "
+                    "there is nothing to slice."
+                ),
+                (
+                    "Add paired per-model scores to run the per-slice "
+                    "comparison."
+                ),
+                "preference_only" if preference_only else "no_paired_scores",
+            ))
 
     return AuditReport(
         model_a=model_a, model_b=model_b, n_examples=data.n_examples,
