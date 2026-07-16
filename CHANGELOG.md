@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Per-slice / subgroup comparison (`--slice-by`).** The audit can now break
+  the two-model comparison down by an optional per-example attribute (category,
+  difficulty, language, ...) so a subgroup regression can't hide inside an
+  overall improvement. Each slice's significance is tested at a
+  Bonferroni-corrected threshold across the slices that were actually tested
+  (`alpha / k_tested`); slices below `min_slice_size` are still listed in
+  `details.slices` but don't size the family. A slice is flagged as a
+  regression only when it is *significantly opposite* to the overall direction,
+  so an underpowered slice never trips the flag. `Example` gains an optional
+  `attributes: dict[str, str]` field, and the native nested JSON adapter reads
+  an `attributes` key per example — CSV and generic record lists don't carry
+  attributes yet. Available via `evaltrust audit --slice-by <attr>` and
+  `evaltrust.audit(..., slice_by=...)`. Closes #84.
 - **lm-eval model names from sibling results files.** When a `results_*.json`
   sits next to a samples log, the adapter uses its top-level `model_name`
   instead of inferring the name from the samples filename.

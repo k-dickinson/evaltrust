@@ -39,6 +39,8 @@ class Example:
       - ``runs``:   model -> list of scores from repeated evaluations.
       - ``judges``: judge -> {model -> score} when several judges scored the item.
       - ``preferences``: judge -> winning model id, or ``Preference.TIE``.
+      - ``attributes``: free-form tags for slicing (e.g. category, difficulty,
+        language). Values are stored as strings.
     """
 
     id: str
@@ -46,6 +48,7 @@ class Example:
     runs: dict[str, list[float]] | None = None
     judges: dict[str, dict[str, float]] | None = None
     preferences: dict[str, str | Preference] | None = None
+    attributes: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)

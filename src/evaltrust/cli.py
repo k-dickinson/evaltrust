@@ -100,6 +100,10 @@ def audit(
     threshold: Optional[float] = typer.Option(
         None, "--threshold",
         help="For a single-model eval, the target score to test against (e.g. 0.8)."),
+    slice_by: Optional[str] = typer.Option(
+        None, "--slice-by",
+        help="Break the comparison down by this per-example attribute "
+             "(e.g. category, difficulty, language)."),
     strict: bool = typer.Option(
         False, "--strict", help="Exit non-zero if confidence is Low."),
     fail_under: Optional[str] = typer.Option(
@@ -145,7 +149,7 @@ def audit(
     try:
         if len(results) == 2:
             data = load_comparison(results, label_a=model_a, label_b=model_b)
-            report = run_audit(data, config=cfg)
+            report = run_audit(data, config=cfg, slice_by=slice_by)
         else:
             suite = load_suite(results[0])
             if len(suite) > 1:
@@ -154,7 +158,8 @@ def audit(
             else:
                 data = next(iter(suite.values()))
                 report = run_audit(data, model_a=model_a, model_b=model_b,
-                                   threshold=threshold, config=cfg)
+                                   threshold=threshold, config=cfg,
+                                   slice_by=slice_by)
     except OSError as e:  # missing, unreadable, or a directory given as a file
         _err.print(f"[red]{e}[/red]")
         raise typer.Exit(code=2)
