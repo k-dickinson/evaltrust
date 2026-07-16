@@ -280,17 +280,26 @@ def contamination(
             reader = csv.DictReader(io.StringIO(text))
             for i, row in enumerate(reader):
                 if col in row:
-                    texts.append(str(row[col]))
+                    val = row[col]
+                    if val is None or not isinstance(val, str):
+                        _err.print(f"[red]Column '{col}' in CSV row {i} is not a string.[/red]")
+                        raise typer.Exit(code=2)
+                    texts.append(val)
                 else:
                     _err.print(f"[red]Column '{col}' not found in CSV row {i}.[/red]")
                     raise typer.Exit(code=2)
         elif suffix == ".jsonl":
-            for i, line in enumerate(text.splitlines()):
+            for i, line in enumerate(text.split('\n')):
+                line = line.rstrip('\r')
                 if not line.strip():
                     continue
                 row = json.loads(line)
                 if col in row:
-                    texts.append(str(row[col]))
+                    val = row[col]
+                    if not isinstance(val, str):
+                        _err.print(f"[red]Key '{col}' in JSONL line {i+1} is not a string.[/red]")
+                        raise typer.Exit(code=2)
+                    texts.append(val)
                 else:
                     _err.print(f"[red]Key '{col}' not found in JSONL line {i+1}.[/red]")
                     raise typer.Exit(code=2)
@@ -299,7 +308,11 @@ def contamination(
             if isinstance(data, list):
                 for i, row in enumerate(data):
                     if isinstance(row, dict) and col in row:
-                        texts.append(str(row[col]))
+                        val = row[col]
+                        if not isinstance(val, str):
+                            _err.print(f"[red]Key '{col}' in JSON array item {i} is not a string.[/red]")
+                            raise typer.Exit(code=2)
+                        texts.append(val)
                     else:
                         _err.print(f"[red]Key '{col}' not found in JSON array item {i}.[/red]")
                         raise typer.Exit(code=2)
