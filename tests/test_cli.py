@@ -342,13 +342,14 @@ def test_utf8_encoding_cli_audit(tmp_path):
         ]
     }
     
-    # Explicitly write as UTF-8
+    # Explicitly write as UTF-8 with raw characters (not escaped as ASCII)
     import json
-    audit_file.write_text(json.dumps(raw), encoding="utf-8")
+    audit_file.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
     
     result = runner.invoke(app, ["audit", str(audit_file), "--plain"])
     
     # Exit code should be 2 for warning (n too small) or 0, but NOT a crash
     assert result.exit_code in (0, 1, 2)
     # The file should be read without UnicodeDecodeError
+    assert not isinstance(result.exception, UnicodeDecodeError)
     assert "UnicodeDecodeError" not in result.output
