@@ -1,9 +1,4 @@
-"""
-Benchmark contamination and overlap detection.
-
-This module provides tools to detect if evaluation benchmarks
-have leaked into the reference or training datasets.
-"""
+"""Benchmark contamination and overlap detection."""
 import re
 import difflib
 from dataclasses import dataclass
@@ -19,10 +14,7 @@ class ContaminationResult:
 
 
 def _normalize_text(text: str) -> str:
-    """
-    Normalize text for comparison.
-    Lowercases, removes punctuation, and normalizes whitespace.
-    """
+    """Normalize text by lowercasing and removing punctuation/excess whitespace."""
     text = text.lower()
     text = re.sub(r"[^\w\s]", "", text)
     text = re.sub(r"\s+", " ", text)
@@ -30,9 +22,7 @@ def _normalize_text(text: str) -> str:
 
 def _find_exact_matches(benchmark: list[str], reference: list[str]) -> set[int]:
 
-    """
-    Find exact matches between benchmark and reference sets.
-    """
+    """Find exact matches between benchmark and reference sets."""
 
     normalized_reference = {
         _normalize_text(text)
@@ -46,6 +36,8 @@ def _find_exact_matches(benchmark: list[str], reference: list[str]) -> set[int]:
     return matches
 
 def _find_near_matches(benchmark: list[str], reference: list[str], exact_matches: set[int], threshold: float = 0.85) -> set[int]:
+    # TODO: Implement a scalable n-gram / MinHash approach for large reference corpora.
+    # Currently uses a quadratic O(N*M) SequenceMatcher search.
     normalized_ref_list = [_normalize_text(text) for text in reference]
     near_matches = set()
     
@@ -74,16 +66,7 @@ def run_contamination_audit(
     benchmark: list[str],
     reference: list[str],
 ) -> ContaminationResult:
-    """
-    Check for contamination between a benchmark and a reference set.
-
-    Args:
-        benchmark: List of strings from the benchmark dataset.
-        reference: List of strings from the reference/training dataset.
-
-    Returns:
-        ContaminationResult: Results of the contamination audit.
-    """
+    """Check for contamination between a benchmark and a reference set."""
 
     exact_matches = _find_exact_matches(benchmark, reference)
     near_matches_indices = _find_near_matches(benchmark, reference, exact_matches)

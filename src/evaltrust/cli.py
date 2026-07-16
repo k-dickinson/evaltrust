@@ -251,7 +251,12 @@ def contamination(
     reference: str = typer.Argument(..., help="Path to the reference/training dataset file."),
     column: str = typer.Option("prompt", "--column", help="The column or key containing the text (e.g. 'prompt', 'text', 'input')."),
 ) -> None:
-    """Audit a benchmark dataset against a reference dataset for contamination."""
+    """Audit a benchmark dataset against a reference dataset for contamination.
+
+    Note: Near-match detection uses a quadratic O(N*M) SequenceMatcher approach intended
+    for modest dataset sizes. For very large reference corpora, a scalable n-gram
+    or MinHash approach should be used instead.
+    """
     from .audit.contamination import run_contamination_audit
     import csv
 

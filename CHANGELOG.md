@@ -6,6 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Benchmark contamination audit.** Added a new `contamination` CLI command to audit a benchmark dataset against a reference/training dataset for exact and near-match leaks.
 - **lm-eval model names from sibling results files.** When a `results_*.json`
   sits next to a samples log, the adapter uses its top-level `model_name`
   instead of inferring the name from the samples filename.
