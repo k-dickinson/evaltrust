@@ -314,6 +314,7 @@ produced and auto-detects the shape. First-class adapters today:
 - **DeepEval** test-results export (one model per run - pass two files to compare)
 - **LangSmith** run export (one experiment per run - pass two files to compare)
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
+- **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)
 - **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`
 - **Record lists** - JSON like `[{"id", "model", "score"}, ...]`
 - **CSV** - long (`id,model,score`) or wide (`id,gpt,claude`)

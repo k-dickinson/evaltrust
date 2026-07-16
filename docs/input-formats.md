@@ -49,6 +49,21 @@ evaltrust audit inspect_run_a.json inspect_run_b.json
 A log with several scorers is audited on its first scorer (as with OpenEvals);
 per-scorer multi-metric support is a possible follow-up.
 
+### OpenAI Evals
+
+OpenAI Evals (`openai/evals`) writes a line-delimited `.jsonl` log per run: a
+leading `spec` object, a stream of per-sample events, and a trailing
+`final_report`. EvalTrust reads the model from `spec.completion_fns`, and each
+`match` event's `data.correct` bool becomes that sample's score (metric
+`accuracy`). A log holds a single model, so compare two runs:
+
+```bash
+evaltrust audit openai_run_a.jsonl openai_run_b.jsonl
+```
+
+Model-graded evals record a config-mapped `choice`/`score` instead of a `correct`
+bool; those events are skipped and counted for now, pending a follow-up.
+
 ### Nested JSON
 
 A structured object with a list of examples, each carrying per-model scores:

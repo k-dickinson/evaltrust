@@ -12,6 +12,7 @@ from evaltrust.adapters import line_registry
 from evaltrust.adapters.common import Record
 from evaltrust.adapters.line_registry import detect_line_adapter
 from evaltrust.adapters.lm_eval import LMEvalAdapter
+from evaltrust.adapters.openai_evals import OpenAIEvalsAdapter
 from evaltrust.core.ingest import load, load_suite
 
 
@@ -33,6 +34,9 @@ _LM_EVAL_RESULTS_FIXTURE = (
     / "results_2026-07-09T22-44-17.123456.json"
 )
 _LM_EVAL_MODEL = "EleutherAI/pythia-160m"
+# Log shape from openai/evals record.py (spec / per-sample events / final_report)
+# and RunSpec.completion_fns in evals/base.py.
+_OPENAI_EVALS_FIXTURE = _TESTS_DIR / "fixtures" / "openai_evals_log.jsonl"
 
 
 def _sample_row(doc_id: int = 0, acc: float = 1.0) -> dict:
@@ -402,6 +406,61 @@ def test_lm_eval_falls_back_to_non_reserved_fields_without_metrics_list(tmp_path
         ("task_metric", 0.5),
         ("legacy_numeric_field", 12.0),
     ]
+
+
+def test_openai_evals_fixture_detects_and_parses_source_derived_shape():
+    rows = _rows(_OPENAI_EVALS_FIXTURE)
+    adapter = OpenAIEvalsAdapter()
+
+    assert adapter.detect_lines(rows)
+    records, metadata = adapter.parse_lines(rows, path=_OPENAI_EVALS_FIXTURE)
+
+    assert len(records) == 3                         # one per match event
+    assert {record.metric for record in records} == {"accuracy"}
+    assert {record.model for record in records} == {"gpt-3.5-turbo"}  # from spec
+    assert [record.example_id for record in records] == [
+        "coqa.dev.0", "coqa.dev.1", "coqa.dev.2",
+    ]
+    assert [record.score for record in records] == [1.0, 0.0, 1.0]    # correct bools
+    assert metadata == {"skipped_rows": 0}
+
+
+def test_openai_evals_load_is_auto_detected_end_to_end():
+    data = load(str(_OPENAI_EVALS_FIXTURE))
+
+    assert data.source_format == "openai-evals"
+    assert data.models == ["gpt-3.5-turbo"]
+    assert [ex.scores["gpt-3.5-turbo"] for ex in data.examples] == [1.0, 0.0, 1.0]
+
+
+def test_openai_evals_skips_and_counts_unusable_match_events():
+    # A match event we can't read is a dropped score row (counted). Non-match
+    # lines (sampling, final_report, spec) are not score rows, so not counted.
+    rows = [
+        {"spec": {"completion_fns": ["m"], "eval_name": "e"}},
+        {"event_id": 0, "sample_id": "s0", "type": "match", "data": {"correct": True}},
+        {"event_id": 1, "sample_id": "s1", "type": "match", "data": {"expected": "x"}},   # no 'correct'
+        {"event_id": 2, "sample_id": "s2", "type": "match", "data": "oops"},              # data not a dict
+        {"event_id": 3, "type": "match", "data": {"correct": False}},                     # no sample_id
+        {"event_id": 4, "sample_id": "s5", "type": "sampling", "data": {}},               # not a match
+        {"final_report": {"accuracy": 1.0}},                                              # not a match
+    ]
+    records, metadata = OpenAIEvalsAdapter().parse_lines(rows)
+
+    assert [record.example_id for record in records] == ["s0"]
+    assert metadata == {"skipped_rows": 3}           # s1, s2, and the missing-sample_id match
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [{"id": "q1", "model": "A", "score": 1}],                    # generic record
+        [{"doc_id": 1, "resps": [["A"]], "acc": 1}],                 # lm-eval sample
+        [{"event_id": 0, "type": "match", "data": {"correct": 1}}],  # no sample_id, no spec
+    ],
+)
+def test_openai_evals_detection_rejects_other_shapes(rows):
+    assert not OpenAIEvalsAdapter().detect_lines(rows)
 
 
 @pytest.mark.parametrize(

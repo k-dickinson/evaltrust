@@ -35,6 +35,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Line-format adapters.** JSONL ingest can detect specific row formats before
   falling through to the existing generic record path; lm-eval sample logs are
   the first supported format.
+- **OpenAI Evals adapter.** Read an `openai/evals` `.jsonl` log directly: the
+  model comes from `spec.completion_fns`, and each `match` event's `data.correct`
+  bool becomes that sample's score (metric `accuracy`). One model per run; compare
+  two runs. Model-graded events (a config-mapped `choice`/`score` rather than a
+  `correct` bool) are skipped and counted for now, pending a follow-up. Closes #85.
 - **Pairwise preference judgments:** audit judge-level A/B/tie votes with an exact sign test and seeded win-rate interval.
 
 - **Judge calibration thresholds are independently tunable.** A new
