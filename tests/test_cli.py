@@ -325,3 +325,31 @@ def test_config_typo_in_explicit_config_is_an_error(tmp_path):
                                  "--config", str(policy)])
     assert result.exit_code == 2
     assert "alpah" in result.output
+
+
+def test_utf8_encoding_cli_audit(tmp_path):
+    """Ensure the CLI correctly loads non-ASCII characters explicitly as UTF-8, including U+2028."""
+    audit_file = tmp_path / "audit.json"
+    
+    # Chinese, Spanish, Russian, Arabic, an Emoji, and U+2028 line separator
+    non_ascii_text = "你好, ¿qué tal?, привет, مرحبا, 🌍\u2028"
+    
+    # A valid JSON structure for audit
+    raw = {
+        "models": ["A", "B"], 
+        "examples": [
+            {"id": "1", "scores": {"A": 1, "B": 0}, "text": non_ascii_text}
+        ]
+    }
+    
+    # Explicitly write as UTF-8 with raw characters (not escaped as ASCII)
+    import json
+    audit_file.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    
+    result = runner.invoke(app, ["audit", str(audit_file), "--plain"])
+    
+    # Assert successful execution
+    assert result.exit_code == 0
+    assert result.exception is None
+    # Verify the file was correctly loaded and processed
+    assert "A vs B" in result.stdout

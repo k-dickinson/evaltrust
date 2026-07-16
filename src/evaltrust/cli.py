@@ -250,5 +250,110 @@ def diff(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def contamination(
+    benchmark: str = typer.Argument(..., help="Path to the benchmark dataset file."),
+    reference: str = typer.Argument(..., help="Path to the reference/training dataset file."),
+    column: str = typer.Option("prompt", "--column", help="The column or key containing the text (e.g. 'prompt', 'text', 'input')."),
+) -> None:
+    """Audit a benchmark dataset against a reference dataset for contamination.
+
+    Note: Near-match detection uses a quadratic O(N*M) SequenceMatcher approach intended
+    for modest dataset sizes. For very large reference corpora, a scalable n-gram
+    or MinHash approach should be used instead.
+    """
+    from .audit.contamination import run_contamination_audit
+    import csv
+
+    def load_texts(path: str, col: str) -> list[str]:
+        p = Path(path)
+        if not p.exists():
+            _err.print(f"[red]File not found: {path}[/red]")
+            raise typer.Exit(code=2)
+            
+        text = p.read_text(encoding="utf-8")
+        suffix = p.suffix.lower()
+        
+        texts = []
+        if suffix == ".csv":
+            import io
+            reader = csv.DictReader(io.StringIO(text))
+            for i, row in enumerate(reader):
+                if col in row:
+                    val = row[col]
+                    if val is None or not isinstance(val, str):
+                        _err.print(f"[red]Column '{col}' in CSV row {i} is not a string.[/red]")
+                        raise typer.Exit(code=2)
+                    texts.append(val)
+                else:
+                    _err.print(f"[red]Column '{col}' not found in CSV row {i}.[/red]")
+                    raise typer.Exit(code=2)
+        elif suffix == ".jsonl":
+            for i, line in enumerate(text.split('\n')):
+                line = line.rstrip('\r')
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if col in row:
+                    val = row[col]
+                    if not isinstance(val, str):
+                        _err.print(f"[red]Key '{col}' in JSONL line {i+1} is not a string.[/red]")
+                        raise typer.Exit(code=2)
+                    texts.append(val)
+                else:
+                    _err.print(f"[red]Key '{col}' not found in JSONL line {i+1}.[/red]")
+                    raise typer.Exit(code=2)
+        elif suffix == ".json":
+            data = json.loads(text)
+            if isinstance(data, list):
+                for i, row in enumerate(data):
+                    if isinstance(row, dict) and col in row:
+                        val = row[col]
+                        if not isinstance(val, str):
+                            _err.print(f"[red]Key '{col}' in JSON array item {i} is not a string.[/red]")
+                            raise typer.Exit(code=2)
+                        texts.append(val)
+                    else:
+                        _err.print(f"[red]Key '{col}' not found in JSON array item {i}.[/red]")
+                        raise typer.Exit(code=2)
+            else:
+                _err.print("[red]JSON file must contain an array of objects.[/red]")
+                raise typer.Exit(code=2)
+        else:
+            _err.print(f"[red]Unsupported file format: {suffix}[/red]")
+            raise typer.Exit(code=2)
+            
+        return texts
+
+    try:
+        bench_texts = load_texts(benchmark, column)
+        ref_texts = load_texts(reference, column)
+    except Exception as e:
+        if isinstance(e, typer.Exit):
+            raise
+        _err.print(f"[red]Error parsing files: {e}[/red]")
+        raise typer.Exit(code=2) from None
+    
+    result = run_contamination_audit(bench_texts, ref_texts)
+    
+    # Print results using Typer's echo/secho
+    typer.echo("\nEvalTrust Benchmark Contamination Audit")
+    typer.echo("=======================================")
+    typer.echo(f"Total benchmark items: {result.total_items}")
+    typer.echo(f"Exact matches found:   {result.exact_matches}")
+    typer.echo(f"Near matches found:    {result.near_matches}")
+    
+    frac = result.contamination_fraction * 100
+    color = typer.colors.GREEN if frac < 5 else typer.colors.YELLOW if frac < 15 else typer.colors.RED
+    typer.echo("Contamination level:   ", nl=False)
+    typer.secho(f"{frac:.1f}%", fg=color, bold=True)
+    typer.echo("")
+    
+    if frac > 0:
+        typer.secho("\nWarning: Overlap detected between benchmark and reference sets.", fg=typer.colors.YELLOW)
+        if frac >= 15:
+            raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()
