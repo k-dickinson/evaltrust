@@ -44,6 +44,28 @@ def noise_file(tmp_path):
     return write(tmp_path, "noise.json", raw)
 
 
+def all_pairs_file(tmp_path):
+    examples = (
+        [{"A": 0, "B": 1, "C": 0}] * 10
+        + [{"A": 0, "B": 0, "C": 1}] * 2
+        + [{"A": 0, "B": 1, "C": 1}] * 20
+    )
+    raw = {
+        "models": ["A", "B", "C"],
+        "examples": [
+            {"id": str(i), "scores": scores}
+            for i, scores in enumerate(examples)
+        ],
+    }
+    return write(tmp_path, "all-pairs.json", raw)
+
+
+def _checks(payload):
+    return {
+        finding["details"].get("check") for finding in payload["findings"]
+    }
+
+
 def suite_file(tmp_path):
     # Two metrics: "strong" (20 discordant pairs, tiny p) and "borderline"
     # (10 vs 2 discordant pairs, p = 0.0386, between alpha/2 and alpha).
@@ -77,6 +99,63 @@ def test_bad_correction_value_errors(tmp_path):
     result = runner.invoke(
         app, ["audit", suite_file(tmp_path), "--correction", "banana"])
     assert result.exit_code == 2
+
+
+def test_all_pairs_flag_enables_the_optional_finding(tmp_path):
+    result = runner.invoke(
+        app, ["audit", all_pairs_file(tmp_path), "--all-pairs", "--json"])
+
+    assert result.exit_code == 0
+    assert "all_pairs" in _checks(json.loads(result.stdout))
+
+
+def test_all_pairs_is_disabled_by_default_in_the_cli(tmp_path):
+    result = runner.invoke(app, ["audit", all_pairs_file(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    assert "all_pairs" not in _checks(json.loads(result.stdout))
+
+
+def test_all_pairs_config_true_survives_an_omitted_flag(tmp_path):
+    policy = tmp_path / "all-pairs.toml"
+    policy.write_text("all_pairs = true\nn_resamples = 99\n")
+    result = runner.invoke(
+        app,
+        ["audit", all_pairs_file(tmp_path), "--config", str(policy), "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert "all_pairs" in _checks(json.loads(result.stdout))
+
+
+def test_no_all_pairs_overrides_config_true(tmp_path):
+    policy = tmp_path / "all-pairs.toml"
+    policy.write_text("all_pairs = true\nn_resamples = 99\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit", all_pairs_file(tmp_path), "--config", str(policy),
+            "--no-all-pairs", "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "all_pairs" not in _checks(json.loads(result.stdout))
+
+
+def test_all_pairs_flag_overrides_config_false(tmp_path):
+    policy = tmp_path / "all-pairs.toml"
+    policy.write_text("all_pairs = false\nn_resamples = 99\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit", all_pairs_file(tmp_path), "--config", str(policy),
+            "--all-pairs", "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "all_pairs" in _checks(json.loads(result.stdout))
 
 
 def test_audit_prints_report_and_exits_zero(tmp_path):

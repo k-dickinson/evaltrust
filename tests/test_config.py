@@ -32,6 +32,26 @@ def test_correction_is_loadable_from_a_toml(tmp_path):
     assert AuditConfig.load(start_dir=str(tmp_path)).correction == "holm"
 
 
+def test_all_pairs_defaults_off():
+    assert AuditConfig().all_pairs is False
+
+
+def test_all_pairs_loads_from_dict():
+    assert AuditConfig.from_dict({"all_pairs": True}).all_pairs is True
+
+
+def test_all_pairs_loads_from_toml(tmp_path):
+    (tmp_path / ".evaltrust.toml").write_text("all_pairs = true\n")
+    assert AuditConfig.load(start_dir=str(tmp_path)).all_pairs is True
+
+
+def test_all_pairs_participates_in_equality_and_hash():
+    disabled = AuditConfig(all_pairs=False)
+    enabled = AuditConfig(all_pairs=True)
+    assert disabled != enabled
+    assert hash(disabled) != hash(enabled)
+
+
 def test_load_reads_a_dedicated_toml(tmp_path):
     (tmp_path / ".evaltrust.toml").write_text(
         "alpha = 0.01\nequivalence_margin = 0.1\njudge_agreement_threshold = 0.9\n")

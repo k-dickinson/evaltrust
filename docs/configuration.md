@@ -50,26 +50,41 @@ saturation_fraction = 0.9
 | `reference_judge` | *(auto)* | Name of the human/gold judge to calibrate against (else auto-detected). |
 | `n_resamples` | `10000` | Bootstrap / permutation resamples. |
 | `seed` | `0` | RNG seed (reproducibility). |
-| `correction` | `"bonferroni"` | Multiple-comparison correction for a multi-metric suite: `bonferroni`, `holm`, or `none`. |
+| `correction` | `"bonferroni"` | Multiple-comparison correction for a multi-metric suite or an enabled all-pairs family: `bonferroni`, `holm`, or `none`. |
+| `all_pairs` | `false` | Also test every declared model pair. Off by default. |
 
-## Multi-metric correction
+## Multiple-comparison correction
 
 When a file scores several metrics, testing them all at the same `alpha` inflates
 false positives, so EvalTrust corrects the significance threshold for the number
 of metrics. Choose the method with `correction` (or `--correction` on the CLI):
 
-- **`bonferroni`** (default) - divide the threshold by the number of metrics
-  (`alpha / k`). Simple and strict.
-- **`holm`** - Holm-Bonferroni, a step-down refinement that rejects at least as
-  many metrics as Bonferroni at the same family-wise error rate, so a genuine win
-  is less likely to be missed. It costs a second pass over the resampling.
-- **`none`** - audit each metric at the raw `alpha` with no correction.
+When `all_pairs = true` or `--all-pairs` is enabled for a single comparison, the
+same method corrects across the model pairs that have shared scores. Pairs without
+shared scores are listed but do not make the tested family larger. A multi-metric
+suite still compares one selected model pair per metric. It does not build a
+pair-by-metric grid.
+
+- **`bonferroni`** (default) - divide the threshold by the number of tests in
+  the family (`alpha / k`). Simple and strict.
+- **`holm`** - Holm-Bonferroni, a step-down refinement that rejects at least
+  as many hypotheses as Bonferroni at the same family-wise error rate, so a
+  genuine win is less likely to be missed.
+- **`none`** - test each hypothesis at the raw `alpha` with no correction.
 
 ```toml
 correction = "holm"
 ```
 
 Or per run: `evaltrust audit results.json --correction holm`.
+
+Enable the optional pair family in config:
+
+```toml
+all_pairs = true
+```
+
+Or per run: `evaltrust audit results.json --all-pairs`.
 
 ## From Python
 

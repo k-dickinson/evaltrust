@@ -91,7 +91,10 @@ def audit(
         None, "--seed", help="Seed for reproducible resampling."),
     correction: Optional[str] = typer.Option(
         None, "--correction",
-        help="Multi-metric correction: bonferroni (default), holm, or none."),
+        help="Multiple-comparison correction: bonferroni (default), holm, or none."),
+    all_pairs: Optional[bool] = typer.Option(
+        None, "--all-pairs/--no-all-pairs",
+        help="Also compare every model pair with one family-wide correction."),
     config_path: Optional[str] = typer.Option(
         None, "--config", help="Path to a config TOML (default: .evaltrust.toml or pyproject)."),
     reference_judge: Optional[str] = typer.Option(
@@ -140,7 +143,8 @@ def audit(
                                    ("equivalence_margin", equivalence_margin),
                                    ("seed", seed),
                                    ("reference_judge", reference_judge),
-                                   ("correction", correction))
+                                   ("correction", correction),
+                                   ("all_pairs", all_pairs))
                  if v is not None}
     cfg = replace(cfg, **overrides)
 

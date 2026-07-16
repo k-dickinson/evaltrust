@@ -182,8 +182,13 @@ def _run_metrics(suite, model_a, model_b, cfg_for,
     """
     reports: "OrderedDict[str, AuditReport]" = OrderedDict()
     for metric, data in suite.items():
+        metric_cfg = cfg_for(metric)
+        # All-pairs belongs to the single-file comparison. Do not build a nested
+        # pair-by-metric family or correct pairs against a suite-adjusted alpha.
+        if metric_cfg.all_pairs:
+            metric_cfg = replace(metric_cfg, all_pairs=False)
         reports[metric] = run_audit(
-            data, model_a=model_a, model_b=model_b, config=cfg_for(metric),
+            data, model_a=model_a, model_b=model_b, config=metric_cfg,
             significant=significant_for(metric))
     return reports
 

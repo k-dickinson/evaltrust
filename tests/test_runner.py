@@ -1,9 +1,12 @@
 """Tests for the audit runner that wires every check together."""
 
+import json
+
 import pytest
 
 from evaltrust.audit.runner import run_audit
 from evaltrust.audit.verdict import VerdictLevel
+from evaltrust.config import AuditConfig
 from evaltrust.core.schema import EvalData, Example
 
 
@@ -51,6 +54,56 @@ def test_more_than_two_models_compares_the_two_strongest():
     }, 100)
     report = run_audit(data)
     assert {report.model_a, report.model_b} == {"best", "mid"}
+
+
+def test_all_pairs_is_additive_and_default_output_is_byte_identical():
+    data = make_data({
+        "weak": [0] * 40,
+        "best": [1] * 40,
+        "mid": [1] * 20 + [0] * 20,
+    }, 40)
+    off = run_audit(data, config=AuditConfig(n_resamples=99, seed=7))
+    on = run_audit(
+        data,
+        config=AuditConfig(all_pairs=True, n_resamples=99, seed=7),
+    )
+
+    assert not any(
+        finding.details.get("check") == "all_pairs" for finding in off.findings)
+    assert any(
+        finding.details.get("check") == "all_pairs" for finding in on.findings)
+    assert off.verdict.to_dict() == on.verdict.to_dict()
+
+    off_payload = off.to_dict()
+    on_payload = on.to_dict()
+    on_payload["findings"] = [
+        finding for finding in on_payload["findings"]
+        if finding["details"].get("check") != "all_pairs"
+    ]
+    off_bytes = json.dumps(
+        off_payload, sort_keys=True, separators=(",", ":")).encode()
+    on_bytes = json.dumps(
+        on_payload, sort_keys=True, separators=(",", ":")).encode()
+    assert off_bytes == on_bytes
+
+
+def test_explicit_primary_pair_stays_primary_with_all_pairs_enabled():
+    data = make_data({
+        "A": [0] * 30,
+        "B": [1] * 30,
+        "C": [1] * 15 + [0] * 15,
+    }, 30)
+    report = run_audit(
+        data,
+        model_a="A",
+        model_b="C",
+        config=AuditConfig(all_pairs=True, n_resamples=99),
+    )
+    finding = next(
+        f for f in report.findings if f.details.get("check") == "all_pairs")
+
+    assert (report.model_a, report.model_b) == ("A", "C")
+    assert finding.details["n_pairs_total"] == 3
 
 
 def test_report_records_all_available_models():

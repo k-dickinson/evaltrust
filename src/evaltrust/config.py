@@ -70,7 +70,8 @@ class AuditConfig:
     reference_judge: str | None = None      # judge treated as ground truth (else auto)
     n_resamples: int = 10_000               # bootstrap / permutation resamples
     seed: int = 0                           # RNG seed (reproducibility)
-    correction: str = "bonferroni"          # multi-metric correction: bonferroni | holm | none
+    correction: str = "bonferroni"          # family correction: bonferroni | holm | none
+    all_pairs: bool = False                 # compare every model pair (opt-in)
     # metrics that must reach HIGH; any below HIGH → suite is LOW immediately
     gated_metrics: frozenset = field(default_factory=frozenset)
     # metric → positive relative weight for weighted-floor rollup; empty = weakest-metric rule
@@ -124,6 +125,7 @@ class AuditConfig:
             self.n_resamples,
             self.seed,
             self.correction,
+            self.all_pairs,
             self.gated_metrics,
             tuple(sorted(self.metric_weights.items())),
         ))
