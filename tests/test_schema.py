@@ -85,6 +85,13 @@ def test_status_has_the_four_levels():
     assert {s.name for s in Status} == {"PASS", "WARN", "FAIL", "SKIP"}
 
 
+def test_status_str_returns_value():
+    assert str(Status.PASS) == "pass"
+    assert str(Status.WARN) == "warn"
+    assert str(Status.FAIL) == "fail"
+    assert str(Status.SKIP) == "skip"
+
+
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
 def test_to_dict_serializes_non_finite_floats_as_null(bad):
     # An infinite Cohen's d (zero-variance gap) or an infinite SNR reaches the

@@ -221,8 +221,8 @@ def diff(
 ) -> None:
     """Compare two saved audits and flag regressions between runs."""
     try:
-        old_data = json.loads(Path(old).read_text())
-        new_data = json.loads(Path(new).read_text())
+        old_data = json.loads(Path(old).read_text(encoding="utf-8"))
+        new_data = json.loads(Path(new).read_text(encoding="utf-8"))
     except OSError as e:  # missing, unreadable, or a directory given as a file
         _err.print(f"[red]{e}[/red]")
         raise typer.Exit(code=2)

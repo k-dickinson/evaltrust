@@ -17,6 +17,9 @@ class VerdictLevel(Enum):
     MODERATE = "Moderate Confidence"
     LOW = "Low Confidence"
 
+    def __str__(self) -> str:
+        return self.value
+
 
 _LEVEL_RANK = {VerdictLevel.LOW: 0, VerdictLevel.MODERATE: 1, VerdictLevel.HIGH: 2}
 

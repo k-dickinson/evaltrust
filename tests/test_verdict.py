@@ -35,6 +35,12 @@ def test_all_skips_is_low_for_lack_of_evidence():
     assert v.level is VerdictLevel.LOW
 
 
+def test_verdict_level_str_returns_value():
+    assert str(VerdictLevel.HIGH) == "High Confidence"
+    assert str(VerdictLevel.MODERATE) == "Moderate Confidence"
+    assert str(VerdictLevel.LOW) == "Low Confidence"
+
+
 def test_verdict_reports_the_failing_findings():
     fail = finding(Status.FAIL, title="not significant")
     v = compute_verdict([finding(Status.PASS), fail])
