@@ -112,7 +112,7 @@ def load(path: str) -> EvalData:
     if not p.exists():
         raise FileNotFoundError(f"No such evaluation file: {path}")
 
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     suffix = p.suffix.lower()
 
     if suffix == ".csv":
@@ -147,7 +147,7 @@ def load_suite(path: str) -> "OrderedDict[str, EvalData]":
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"No such evaluation file: {path}")
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     suffix = p.suffix.lower()
 
     def _suite_from_rows(rows, fmt) -> "OrderedDict[str, EvalData]":

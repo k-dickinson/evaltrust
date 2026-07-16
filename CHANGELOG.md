@@ -39,6 +39,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (still driven by the effect-size magnitude).
 
 ### Fixed
+- **Fixed file decoding for non-UTF-8 default locales.** The CLI now explicitly uses UTF-8 when reading evaluation results files, preventing `UnicodeDecodeError` on systems (like Windows) where the default locale encoding is not UTF-8.
 - **Multi-scorer Inspect and OpenEvals logs fan out into a full metric suite.** On
   the suite path (`load_suite` / `audit_suite`), every scorer in an Inspect or
   OpenEvals log now becomes its own metric instead of silently keeping only the
