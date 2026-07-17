@@ -175,12 +175,24 @@ def _records_from_jsonl_iter(
 ) -> tuple[list[Record], str, dict]:
     """Build records from a dict iterator (used for large JSONL files).
 
-    The row list is materialised from a line-at-a-time iterator so the file is
-    never fully read into a single string.  ``detect_line_adapter`` and
-    ``dicts_to_records`` both need the full row list to determine column layout,
-    so materialisation into a list of dicts (rather than a raw string) is the
-    correct boundary: each dict is a single parsed record, not a copy of the
-    whole file.
+    Memory model
+    ------------
+    The iterator is materialised into a ``list[dict]`` — one parsed object per
+    row — rather than a single raw-text string of the whole file.  This is a
+    meaningful reduction: a 1 GB JSONL file whose records have large string
+    fields (e.g. prompt/completion text) may produce a much smaller dict list
+    once non-score fields are parsed and held as Python objects.
+
+    Two-pass constraint
+    -------------------
+    ``detect_line_adapter`` inspects *all* rows to recognise tool-specific
+    schemas, and ``dicts_to_records`` scans the first row's keys to determine
+    column layout before iterating.  Both require random-access to the full row
+    list, so a single-pass streaming path is not possible without refactoring
+    those interfaces.
+
+    # TODO: refactor detect_line_adapter / dicts_to_records to accept an
+    # iterator with a one-row lookahead so the full list need not be retained.
     """
     rows = list(row_iter)
     if not rows:
