@@ -172,8 +172,11 @@ def bootstrap_rank_distribution(
             raise ValueError("cluster_ids must have length n_examples")
         unique, inverse = np.unique(labels, return_inverse=True)
         k = int(unique.size)
-        # n >= 1 is required above, so unique is never empty.
-        members = [np.flatnonzero(inverse == c) for c in range(k)]
+        # Group row indices by cluster in O(n log n). Avoids a per-cluster
+        # flatnonzero scan that would be O(n * k) when many labels are singletons.
+        row_order = np.argsort(inverse, kind="stable")
+        boundaries = np.flatnonzero(np.diff(inverse[row_order])) + 1
+        members = np.split(row_order, boundaries)
         n_units = k
         clustered = True
         # Cluster path mirrors bootstrap_ci_clustered: one draw of k units per
