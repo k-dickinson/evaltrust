@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.7.0] — 2026-07-17
 - **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file
   has three or more scored models, the audit reports an advisory bootstrap
   rank-occupancy finding: which leaderboard positions hold under resampling of
