@@ -40,6 +40,9 @@ dev = ["pytest>=8.0", "statsmodels>=0.14", "cffconvert>=2.0"]
 # cyclonedx-bom pulls a large transitive tree, so it lives in its own extra
 # (not `dev`) to keep the dev install resolvable. Used only to generate an SBOM.
 sbom = ["cyclonedx-bom>=4.0"]
+# ijson enables low-memory streaming for large .json files (> 64 MiB).
+# Install with: pip install "evaltrust[streaming]"
+streaming = ["ijson>=3.1"]
 
 [project.urls]
 Homepage = "https://github.com/k-dickinson/evaltrust"

@@ -322,8 +322,8 @@ def _load_json_streamed(path: Path) -> EvalData | None:
     if ijson is None:
         logger.warning(
             "File '%s' exceeds the %d MiB streaming threshold but 'ijson' is "
-            "not installed. The file will be loaded fully into memory. Install "
-            "'ijson' to enable low-memory JSON streaming.",
+            "not installed. The file will be loaded fully into memory. "
+            "Install it with: pip install 'evaltrust[streaming]'",
             path.name,
             _STREAM_THRESHOLD // (1024 * 1024),
         )
@@ -390,8 +390,8 @@ def _suite_from_json_streamed(path: Path) -> "OrderedDict[str, EvalData] | None"
     if ijson is None:
         logger.warning(
             "File '%s' exceeds the %d MiB streaming threshold but 'ijson' is "
-            "not installed. The suite will be loaded fully into memory. Install "
-            "'ijson' to enable low-memory JSON streaming.",
+            "not installed. The suite will be loaded fully into memory. "
+            "Install it with: pip install 'evaltrust[streaming]'",
             path.name,
             _STREAM_THRESHOLD // (1024 * 1024),
         )
