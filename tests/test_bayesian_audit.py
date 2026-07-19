@@ -24,6 +24,11 @@ def by_check(findings, check):
     return finding
 
 
+def _squash(s: str) -> str:
+    """Collapse whitespace so wrap-induced newlines do not break substring asserts."""
+    return " ".join(s.split())
+
+
 def test_counts_negative_difference_as_a_win_and_zero_as_a_tie():
     finding = audit_bayesian_win_probability(
         make_data([-0.4, -0.1, 0.2, 0.0]), "A", "B"
@@ -190,13 +195,16 @@ def test_result_title_renders_in_every_human_report_format():
 
     assert "P(A wins more often than B on decisive examples)" in title
     assert "95% CrI for A win rate" in title
+    # Rich wraps long titles mid-token (width= is ignored when TERM=dumb and
+    # height is unset). Assert on whitespace-normalized text so the check is
+    # about content, not terminal geometry.
     for rendered in (
         render_report(report, width=200),
         render_plain(report),
         render_markdown(report),
         render_html(report),
     ):
-        assert title in rendered
+        assert _squash(title) in _squash(rendered)
 
 
 def test_pass_and_skip_findings_follow_the_golden_rule():
