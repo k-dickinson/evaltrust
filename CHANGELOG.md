@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **`EvalData.paired_run_differences()`** exposes per-example, per-run
+  differences (`score_B - score_A`, runs aligned by index) to the comparison
+  layer. Additive and unused for now; it is the input for the upcoming run-aware
+  estimator (#130). The default score-based path is unchanged.
 
 ## [0.7.0] — 2026-07-17
 - **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file

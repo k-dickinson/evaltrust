@@ -62,6 +62,24 @@ def test_has_runs_true_only_when_any_example_has_runs():
     assert with_runs.has_runs is True
 
 
+def test_paired_run_differences_yields_per_example_run_diffs():
+    d = _data(examples=[
+        Example("q1", {"A": 0.5, "B": 0.6}, runs={"A": [0, 1], "B": [1, 1]}),
+        Example("q2", {"A": 0, "B": 1}),                       # no runs -> excluded
+        Example("q3", {"A": 1, "B": 0}, runs={"A": [1, 1, 1], "B": [0, 0]}),
+        Example("q4", {"A": 1, "B": 0}, runs={"A": [1, 1]}),   # runs for one model -> excluded
+    ])
+    groups = d.paired_run_differences("A", "B")
+    assert len(groups) == 2                     # q1 and q3 only
+    assert list(groups[0]) == [1.0, 0.0]        # [1,1] - [0,1]
+    assert list(groups[1]) == [-1.0, -1.0]      # aligned to len 2: [0,0] - [1,1]
+
+
+def test_paired_run_differences_empty_without_runs():
+    d = _data(examples=[Example(str(i), {"A": 0, "B": 1}) for i in range(5)])
+    assert d.paired_run_differences("A", "B") == []
+
+
 def test_has_judges_true_only_when_any_example_has_judges():
     without = _data(examples=[Example("q1", {"A": 1, "B": 0})])
     with_judges = _data(examples=[
