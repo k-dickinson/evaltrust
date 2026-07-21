@@ -143,3 +143,20 @@ def test_load_suite_openevals_multi_scorer_fans_out(tmp_path):
     # Each metric must carry its OWN scores, not a copy of the first scorer's.
     assert [ex.scores["model"] for ex in suite["correctness"].examples] == [1.0, 0.0]
     assert [ex.scores["model"] for ex in suite["helpfulness"].examples] == [0.0, 1.0]
+
+
+def test_load_suite_mlflow_evaluate_multi_metric_column_fans_out(tmp_path):
+    # Each MLflow metric column (exact_match/score, toxicity/v1/score, ...) must
+    # become its own metric, not collapse to the first column.
+    p = tmp_path / "mlflow_eval_results_table.json"
+    p.write_text(json.dumps({
+        "columns": ["questions", "exact_match/score", "toxicity/v1/score"],
+        "data": [
+            ["q1", 1.0, 0.1],
+            ["q2", 0.0, 0.2],
+        ],
+    }))
+    suite = load_suite(str(p))
+    assert set(suite.keys()) == {"exact_match", "toxicity/v1"}
+    assert [ex.scores["model"] for ex in suite["exact_match"].examples] == [1.0, 0.0]
+    assert [ex.scores["model"] for ex in suite["toxicity/v1"].examples] == [0.1, 0.2]

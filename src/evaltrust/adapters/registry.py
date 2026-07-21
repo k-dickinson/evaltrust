@@ -16,6 +16,7 @@ from .helm import HelmAdapter
 from .inspect_ai import InspectAdapter
 from .langfuse import LangfuseAdapter
 from .langsmith import LangSmithAdapter
+from .mlflow_evaluate import MlflowEvaluateAdapter
 from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
 from .ragas import RagasAdapter
@@ -44,6 +45,7 @@ REGISTRY: list[Adapter] = [
     LangSmithAdapter(),
     RagasAdapter(),
     HelmAdapter(),
+    MlflowEvaluateAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]
