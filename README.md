@@ -335,6 +335,7 @@ produced and auto-detects the shape. First-class adapters today:
 - **LangSmith** run export (one experiment per run - pass two files to compare)
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
 - **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)
+- **MLflow evaluate** `eval_results_table` export (one model per run - pass two files to compare)
 - **lm-eval** (`lm-evaluation-harness`) sample logs (`.jsonl`)
 - **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`
 - **Record lists** - JSON like `[{"id", "model", "score"}, ...]`

@@ -699,3 +699,117 @@ def test_no_earlier_adapter_claims_a_ragas_export():
 
 def test_detect_routes_ragas():
     assert detect_adapter(RAGAS).source_format == "ragas"
+
+
+# ---------------------------------------------------------------------------
+# MLflow evaluate (per-row eval_results_table -- one model per run)
+# ---------------------------------------------------------------------------
+
+from evaltrust.adapters.mlflow_evaluate import MlflowEvaluateAdapter
+
+# The direct eval_results_table.json artifact shape: a pandas DataFrame dumped
+# with to_json(orient="split", index=False) by mlflow.log_table(). See
+# tests/fixtures/mlflow_eval_results_table.json for a fuller, real-shaped table.
+MLFLOW_EVALUATE = {
+    "columns": ["questions", "outputs", "exact_match/score", "toxicity/v1/score"],
+    "data": [
+        ["What is MLflow?", "MLflow manages the ML lifecycle.", 0.0, 0.0002],
+        ["What is Databricks?", "Databricks is a cloud analytics platform.", 0.0, 0.0001],
+    ],
+}
+
+
+def test_mlflow_evaluate_detects_and_parses_the_real_fixture():
+    raw = _load(_TESTS_DIR / "fixtures" / "mlflow_eval_results_table.json")
+    a = MlflowEvaluateAdapter()
+    assert a.detect(raw)
+    data = a.parse(raw)
+    assert data.source_format == "mlflow_evaluate"
+    assert data.models == ["model"]
+    assert data.n_examples == 2
+
+
+def test_mlflow_evaluate_single_audit_uses_first_metric_column():
+    # Column order: exact_match/score precedes toxicity/v1/score.
+    data = MlflowEvaluateAdapter().parse(MLFLOW_EVALUATE)
+    assert [ex.scores["model"] for ex in data.examples] == [0.0, 0.0]
+
+
+def test_mlflow_evaluate_suite_fans_out_every_metric_column():
+    suite = MlflowEvaluateAdapter().parse_suite(MLFLOW_EVALUATE)
+    assert set(suite.keys()) == {"exact_match", "toxicity/v1"}
+    assert [ex.scores["model"] for ex in suite["toxicity/v1"].examples] == [0.0002, 0.0001]
+
+
+def test_mlflow_evaluate_accepts_the_eval_results_table_wrapper():
+    # result.tables round-tripped as {"eval_results_table": <split dict>}.
+    wrapped = {"eval_results_table": MLFLOW_EVALUATE}
+    a = MlflowEvaluateAdapter()
+    assert a.detect(wrapped)
+    assert a.parse(wrapped).n_examples == 2
+
+
+def test_mlflow_evaluate_accepts_a_records_orient_wrapped_table():
+    # A user who dumps result.tables["eval_results_table"].to_dict(orient="records")
+    # instead of round-tripping the raw split-orient artifact.
+    wrapped = {"eval_results_table": [
+        {"questions": "q1", "exact_match/score": 1.0},
+        {"questions": "q2", "exact_match/score": 0.0},
+    ]}
+    a = MlflowEvaluateAdapter()
+    assert a.detect(wrapped)
+    data = a.parse(wrapped)
+    assert [ex.scores["model"] for ex in data.examples] == [1.0, 0.0]
+
+
+def test_mlflow_evaluate_bare_token_count_and_latency_columns_count_as_metrics():
+    raw = {"columns": ["questions", "token_count", "latency"],
+           "data": [["q1", 12, 0.53], ["q2", 9, 0.41]]}
+    a = MlflowEvaluateAdapter()
+    assert a.detect(raw)
+    suite = a.parse_suite(raw)
+    assert set(suite.keys()) == {"token_count", "latency"}
+
+
+def test_mlflow_evaluate_skips_and_counts_an_unreadable_metric_score():
+    raw = {"columns": ["questions", "exact_match/score", "toxicity/v1/score"],
+           "data": [["q1", 1.0, 0.1], ["q2", 0.0, None]]}
+    suite = MlflowEvaluateAdapter().parse_suite(raw)
+    assert suite["exact_match"].n_examples == 2
+    assert suite["toxicity/v1"].n_examples == 1
+    assert suite["toxicity/v1"].metadata["skipped_rows"] == 1
+
+
+def test_mlflow_evaluate_raises_when_no_row_has_a_usable_metric_score():
+    raw = {"columns": ["questions", "exact_match/score"],
+           "data": [["q1", None], ["q2", None]]}
+    with pytest.raises(ValueError):
+        MlflowEvaluateAdapter().parse(raw)
+
+
+def test_mlflow_evaluate_rejects_a_table_with_no_mlflow_metric_columns():
+    # A generic wide-format split-orient table with no MLflow metric naming
+    # convention must not be claimed.
+    raw = {"columns": ["questions", "gpt4_score"], "data": [["q1", 1]]}
+    assert not MlflowEvaluateAdapter().detect(raw)
+
+
+def test_mlflow_evaluate_does_not_false_positive_on_other_fixtures():
+    a = MlflowEvaluateAdapter()
+    for other in (PROMPTFOO, NATIVE, LONG, WIDE, DEEPEVAL_SNAKE, DEEPEVAL_CAMEL,
+                  OPENEVALS_SAMPLE, INSPECT, LANGSMITH, RAGAS):
+        assert not a.detect(other), other
+
+
+def test_no_earlier_adapter_claims_an_mlflow_evaluate_export():
+    assert not PromptfooAdapter().detect(MLFLOW_EVALUATE)
+    assert not DeepEvalAdapter().detect(MLFLOW_EVALUATE)
+    assert not OpenEvalsAdapter().detect(MLFLOW_EVALUATE)
+    assert not InspectAdapter().detect(MLFLOW_EVALUATE)
+    assert not LangSmithAdapter().detect(MLFLOW_EVALUATE)
+    assert not RagasAdapter().detect(MLFLOW_EVALUATE)
+    assert not NativeNestedAdapter().detect(MLFLOW_EVALUATE)
+
+
+def test_detect_routes_mlflow_evaluate():
+    assert detect_adapter(MLFLOW_EVALUATE).source_format == "mlflow_evaluate"

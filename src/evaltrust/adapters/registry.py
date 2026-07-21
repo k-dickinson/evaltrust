@@ -14,6 +14,7 @@ from .deepeval import DeepEvalAdapter
 from .generic import GenericRecordsAdapter, NativeNestedAdapter
 from .inspect_ai import InspectAdapter
 from .langsmith import LangSmithAdapter
+from .mlflow_evaluate import MlflowEvaluateAdapter
 from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
 from .ragas import RagasAdapter
@@ -40,6 +41,7 @@ REGISTRY: list[Adapter] = [
     InspectAdapter(),
     LangSmithAdapter(),
     RagasAdapter(),
+    MlflowEvaluateAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]
