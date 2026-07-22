@@ -333,6 +333,7 @@ produced and auto-detects the shape. First-class adapters today:
 - **DeepEval** test-results export (one model per run - pass two files to compare)
 - **Inspect** (UK AISI) `.json` eval log (one model per log - pass two to compare)
 - **OpenEvals** results list (one model per run - pass two files to compare)
+- **Langfuse** Scores API export (one model per export - pass two files to compare)
 - **LangSmith** run export (one experiment per run - pass two files to compare)
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
 - **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)

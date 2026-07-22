@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 - **Streaming ingestion for large JSONL and CSV files.** `core/ingest.py` no longer calls `Path.read_text()` for files above the 64 MiB threshold — the raw file string is never materialised. For the common long-format JSONL case (`model` + `score` columns), records are extracted row-by-row via `_stream_records_from_jsonl()` (measured peak ~0.21× file size on payload-heavy rows). CSV is consumed via `csv.DictReader` on an open file handle. Large `.json` files are also streamed when the optional `ijson` extra is installed (`pip install "evaltrust[streaming]"`); without it the file falls back to a full load with a logged warning. Records and `EvalData` remain O(n) in row count — this PR eliminates the full-file string, not the record list (fixes #80).
+- **Langfuse adapter.** Public Scores API exports are detected structurally and
+  mapped from trace IDs, score names, and typed values into metric suites. Both
+  current v3 responses (`data`/`meta` with `subject`) and legacy flat v2 score
+  rows are supported (including v2 wrapped in `data`/`meta`); unusable
+  text/correction scores are skipped and counted. A wrapped `data`/`meta`
+  response is only accepted as complete when its `meta` proves it is the only
+  page (v2: `page == 1` and `totalPages == 1`; v3: no `cursor`) - a page-2-of-2
+  response is rejected even though it's the *last* page, since its `data` still
+  only holds that one page's rows. More than one score sharing a
+  `(trace, metric)` pair raises rather than being averaged. Categorical scores
+  are read version-correctly: v3's `value` is the
+  category string itself, while legacy exports trust the numeric `value` only
+  when a `configId` is present and otherwise coerce the `stringValue` label.
+  Session/experiment-level scores get a specific unsupported-subject error.
 - **`EvalData.paired_run_differences()`** exposes per-example, per-run
   differences (`score_B - score_A`, runs aligned by index) to the comparison
   layer. Additive and unused for now; it is the input for the upcoming run-aware

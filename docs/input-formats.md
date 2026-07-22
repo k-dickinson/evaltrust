@@ -64,6 +64,85 @@ evaltrust audit openai_run_a.jsonl openai_run_b.jsonl
 Model-graded evals record a config-mapped `choice`/`score` instead of a `correct`
 bool; those events are skipped and counted for now, pending a follow-up.
 
+### Langfuse
+
+Langfuse scores can be exported from the public Scores API. For the current v3
+API, request the `subject` field group so EvalTrust can associate each score with
+its trace:
+
+```bash
+curl -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" \
+  "https://cloud.langfuse.com/api/public/v3/scores?fields=subject&limit=100" \
+  > langfuse_scores.json
+evaltrust audit langfuse_scores.json
+```
+
+**The command above shows the shape of the request, not a complete export.**
+The Scores API paginates, and a single page's `data` array only ever holds
+that page's rows - being the *last* page doesn't mean the earlier pages' scores
+are included too. EvalTrust refuses to parse a `{"data": [...], "meta": {...}}`
+response unless its `meta` proves this was the only page:
+
+- **v2**: only `meta.page == 1` **and** `meta.totalPages == 1` is accepted.
+  Any other `page`/`totalPages` combination - including the last page of a
+  multi-page result, e.g. `page: 2, totalPages: 2` - is rejected, because that
+  response's `data` still only has that one page's rows.
+- **v3**: a non-null `meta.cursor` (more results follow) is rejected. A missing
+  or null `cursor` means *this* page is the last one, but v3's `meta` carries
+  no page count to check against - so it cannot prove an independently saved
+  "last page" response actually included every earlier page too. Treat a
+  cursor-paginated export the same way: request every page and combine them
+  yourself; don't assume a lone saved response is complete just because its
+  `cursor` is empty.
+
+Either way, fetch every page and concatenate each page's `data` array into one
+combined **bare JSON list** (drop the `meta` wrapper entirely) before running
+`evaltrust audit` - a bare list bypasses this check because it can't
+accidentally look complete when it isn't.
+
+Score `name` values become metrics. `NUMERIC` values are read directly from
+`value`, and `BOOLEAN` values from `value` however Langfuse encodes them for
+that API version (a JSON boolean in v3, numeric `1`/`0` in legacy exports).
+
+`CATEGORICAL` scores are read differently depending on the API version,
+because v3 and legacy exports disagree on where the label lives:
+
+- **v3** (`subject`-shaped rows): `value` *is* the category string (e.g.
+  `"correct"`), read and coerced directly. There is no `stringValue` field in
+  v3, and a `configId` (only present when `fields=details` was requested) does
+  not change this.
+- **Legacy flat exports**: `value` is a number that only means something when
+  a `configId` links it to a score config - Langfuse's own schema says it
+  "defaults to 0" otherwise - so without a `configId`, the human-readable
+  `stringValue` is used instead.
+
+Either way, the resulting string or number must map unambiguously to a number
+or a pass/fail-style label (e.g. `correct`/`incorrect`), or the row is skipped
+and counted. **Session- and experiment-level scores are unsupported** -
+EvalTrust compares models per trace and raises a clear error if a score's
+`subject.kind` isn't `trace` or `observation`. **`TEXT` and `CORRECTION`
+scores are always skipped** (and counted) - they're free text, not a number.
+Legacy exports with flat `traceId` fields are also supported, including when
+they arrive `{"data": [...], "meta": {...}}`-wrapped like v3.
+
+If a trace has more than one score with the same metric name - for example a
+trace-level score and an observation-level score both named `correctness` -
+EvalTrust raises rather than averaging or picking one; combining them needs an
+explicit aggregation policy (max, latest, per-observation, ...) decided by a
+maintainer, not a silent guess.
+
+A Langfuse export contains scores for one model/run but does not carry a model
+identity, so it is labeled `model`. To compare models, export each run separately
+and pass both files; their file names become the labels when the generic model
+names collide. As with the other [single-model tools](#single-model-tools-two-file-comparison),
+`evaltrust audit fileA.json fileB.json` uses only the **first** metric name it
+finds in each file - a Langfuse export with several score names needs one audit
+per metric, or a follow-up per-metric suite mode:
+
+```bash
+evaltrust audit gpt4_langfuse.json claude_langfuse.json
+```
+
 ### Nested JSON
 
 A structured object with a list of examples, each carrying per-model scores:
@@ -211,9 +290,9 @@ without a `metric` column is treated as a single metric, exactly as before. See
 
 ## Single-model tools (two-file comparison)
 
-Some tools - DeepEval, LangSmith, Ragas, OpenEvals, Inspect - evaluate one model per
-run, so a single export contains only one model. Run each model, then pass both
-files:
+Some tools - DeepEval, Langfuse, LangSmith, Ragas, OpenEvals, Inspect - evaluate
+one model per run, so a single export contains only one model. Run each model,
+then pass both files:
 
 ```bash
 evaltrust audit gpt4_run.json claude_run.json
