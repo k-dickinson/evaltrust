@@ -1,0 +1,34 @@
+{
+  "columns": [
+    "questions",
+    "answer",
+    "outputs",
+    "token_count",
+    "exact_match/score",
+    "toxicity/v1/score",
+    "answer_correctness/v1/score",
+    "answer_correctness/v1/justification"
+  ],
+  "data": [
+    [
+      "What is MLflow?",
+      "MLflow is an open source platform for the machine learning lifecycle.",
+      "MLflow is an open-source platform to manage the ML lifecycle.",
+      14,
+      0.0,
+      0.0002,
+      4.0,
+      "The output captures the key facts of the target answer, differing only in phrasing."
+    ],
+    [
+      "What is Databricks?",
+      "Databricks is a unified data and AI platform.",
+      "Databricks is a cloud-based data analytics company.",
+      9,
+      0.0,
+      0.0001,
+      null,
+      null
+    ]
+  ]
+}

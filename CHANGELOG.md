@@ -16,6 +16,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one with `make sbom`, and a `SBOM` workflow attaches one to every published
   release. Corrected the stale supported-versions table.
 
+### Added
+- **MLflow evaluate adapter.** Read the per-row `eval_results_table` that
+  `mlflow.evaluate()` logs (`{"columns": [...], "data": [[...]]}`, also accepted
+  wrapped as `{"eval_results_table": ...}`): each MLflow metric column
+  (`<metric>/score`, or `<metric>/<version>/score` for a versioned built-in like
+  `toxicity/v1`, plus bare `token_count`/`latency`) fans out into its own metric
+  in the suite. One model per run; compare two runs. Closes #11.
+
 ## [0.7.0] — 2026-07-17
 - **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file
   has three or more scored models, the audit reports an advisory bootstrap
