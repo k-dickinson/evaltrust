@@ -10,8 +10,9 @@ Detection is structural (``instance_id`` + nested ``name`` object in stats),
 never by file name.  This test module checks:
   - detection / no-false-positives against every other fixture
   - parsing: exact_match is the primary metric on the single-audit path
-  - parsing: all metrics are present on the suite path
+  - parsing: quality metrics only on the suite path (bookkeeping filtered)
   - skip-and-count for unparsable stat entries
+  - missing instance_id counted as a skipped row (not silently indexed)
   - end-to-end auto-detection via the registry
   - no false positives against any other adapter or file fixture
 """
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from evaltrust.adapters.helm import HelmAdapter
+from evaltrust.adapters.helm import HelmAdapter, _BOOKKEEPING_STATS
 from evaltrust.adapters.registry import detect_adapter
 
 _TESTS_DIR = Path(__file__).parent
@@ -40,7 +41,7 @@ def _load(path):
 
 HELM = _load(_TESTS_DIR / "fixtures" / "helm_per_instance_stats.json")
 
-# A minimal in-code fixture — three instances, two metrics each.
+# A minimal in-code fixture — two instances, two quality metrics each.
 HELM_MINIMAL = [
     {
         "instance_id": "id0",
@@ -54,6 +55,31 @@ HELM_MINIMAL = [
         "stats": [
             {"name": {"name": "exact_match", "split": "test"}, "mean": 0.0},
             {"name": {"name": "quasi_exact_match", "split": "test"}, "mean": 1.0},
+        ],
+    },
+]
+
+# Fixture that mixes quality metrics with the bookkeeping stats a real HELM run
+# emits — num_trials, num_prompt_tokens, finish_reason_stop, etc.
+HELM_WITH_BOOKKEEPING = [
+    {
+        "instance_id": "id0",
+        "stats": [
+            {"name": {"name": "exact_match"}, "mean": 1.0},
+            {"name": {"name": "num_trials"}, "mean": 1.0},
+            {"name": {"name": "num_prompt_tokens"}, "mean": 312.0},
+            {"name": {"name": "finish_reason_stop"}, "mean": 1.0},
+            {"name": {"name": "finish_reason_length"}, "mean": 0.0},
+        ],
+    },
+    {
+        "instance_id": "id1",
+        "stats": [
+            {"name": {"name": "exact_match"}, "mean": 0.0},
+            {"name": {"name": "num_trials"}, "mean": 1.0},
+            {"name": {"name": "num_prompt_tokens"}, "mean": 298.0},
+            {"name": {"name": "finish_reason_stop"}, "mean": 1.0},
+            {"name": {"name": "finish_reason_length"}, "mean": 0.0},
         ],
     },
 ]
@@ -118,6 +144,14 @@ def test_helm_parse_real_fixture_exact_match_scores():
     assert scores == [1.0, 0.0, 0.0]
 
 
+def test_helm_parse_still_picks_exact_match_when_bookkeeping_present():
+    # parse() must still find exact_match even when bookkeeping stats exist.
+    data = HelmAdapter().parse(HELM_WITH_BOOKKEEPING)
+    assert data.n_examples == 2
+    scores = [ex.scores["model"] for ex in data.examples]
+    assert scores == [1.0, 0.0]
+
+
 def test_helm_parse_falls_back_to_quasi_exact_match_when_no_exact_match():
     raw = [
         {
@@ -156,34 +190,59 @@ def test_helm_parse_uses_generic_model_name():
 
 
 # ---------------------------------------------------------------------------
-# Parsing: suite path (all metrics)
+# Parsing: suite path — bookkeeping stats must be filtered out
 # ---------------------------------------------------------------------------
 
-def test_helm_parse_suite_returns_all_metrics():
+def test_helm_parse_suite_returns_only_quality_metrics():
     suite = HelmAdapter().parse_suite(HELM_MINIMAL)
     assert set(suite.keys()) == {"exact_match", "quasi_exact_match"}
 
 
-def test_helm_parse_suite_real_fixture_contains_all_metrics():
+def test_helm_parse_suite_filters_num_trials():
+    suite = HelmAdapter().parse_suite(HELM_WITH_BOOKKEEPING)
+    assert "num_trials" not in suite
+
+
+def test_helm_parse_suite_filters_num_prompt_tokens():
+    suite = HelmAdapter().parse_suite(HELM_WITH_BOOKKEEPING)
+    assert "num_prompt_tokens" not in suite
+
+
+def test_helm_parse_suite_filters_all_finish_reason_variants():
+    suite = HelmAdapter().parse_suite(HELM_WITH_BOOKKEEPING)
+    assert "finish_reason_stop" not in suite
+    assert "finish_reason_length" not in suite
+
+
+def test_helm_parse_suite_keeps_exact_match_after_filtering():
+    suite = HelmAdapter().parse_suite(HELM_WITH_BOOKKEEPING)
+    assert "exact_match" in suite
+    scores = [ex.scores["model"] for ex in suite["exact_match"].examples]
+    assert scores == [1.0, 0.0]
+
+
+def test_helm_parse_suite_all_known_bookkeeping_stats_are_filtered():
+    """Every name in _BOOKKEEPING_STATS must be absent from parse_suite output."""
+    raw = [
+        {
+            "instance_id": "id0",
+            "stats": (
+                [{"name": {"name": "exact_match"}, "mean": 1.0}]
+                + [{"name": {"name": s}, "mean": 1.0} for s in _BOOKKEEPING_STATS]
+            ),
+        }
+    ]
+    suite = HelmAdapter().parse_suite(raw)
+    for bk_stat in _BOOKKEEPING_STATS:
+        assert bk_stat not in suite, f"{bk_stat!r} should be filtered from suite"
+    assert "exact_match" in suite
+
+
+def test_helm_parse_suite_real_fixture_no_bookkeeping():
     suite = HelmAdapter().parse_suite(HELM)
-    # The fixture has exact_match, quasi_exact_match, num_trials
+    assert "num_trials" not in suite
     assert "exact_match" in suite
     assert "quasi_exact_match" in suite
-    assert "num_trials" in suite
-
-
-def test_helm_parse_suite_exact_match_values():
-    suite = HelmAdapter().parse_suite(HELM)
-    em = suite["exact_match"]
-    scores = [ex.scores["model"] for ex in em.examples]
-    assert scores == [1.0, 0.0, 0.0]
-
-
-def test_helm_parse_suite_quasi_exact_match_values():
-    suite = HelmAdapter().parse_suite(HELM)
-    qem = suite["quasi_exact_match"]
-    scores = [ex.scores["model"] for ex in qem.examples]
-    assert scores == [1.0, 1.0, 0.0]
 
 
 def test_helm_parse_suite_each_metric_has_correct_source_format():
@@ -220,7 +279,7 @@ def test_helm_skips_and_counts_stat_with_none_mean():
         {
             "instance_id": "id0",
             "stats": [
-                {"name": {"name": "exact_match"}, "mean": None},         # missing
+                {"name": {"name": "exact_match"}, "mean": None},
             ],
         },
         {
@@ -247,29 +306,26 @@ def test_helm_skips_and_counts_stat_with_no_name_object():
             "stats": [{"name": {"name": "exact_match"}, "mean": 0.5}],
         },
     ]
-    # id0 has all-bad stats → counts as 1 skipped instance
     data = HelmAdapter().parse(raw)
     assert data.n_examples == 1
     assert data.metadata["skipped_rows"] == 1
 
 
 def test_helm_counts_only_bad_stats_when_instance_has_some_good_ones():
-    # When an instance has at least one parsable stat, the instance is kept and
-    # only the individual bad stats inside it are counted — not the whole instance.
     raw = [
         {
             "instance_id": "id0",
             "stats": [
-                {"name": {"name": "exact_match"}, "mean": 1.0},   # good  → kept
-                {"name": {"name": "f1_score"}, "mean": None},      # bad   → counted
-                {"name": {"name": "rouge_l"}, "mean": "banana"},   # bad   → counted
+                {"name": {"name": "exact_match"}, "mean": 1.0},   # good
+                {"name": {"name": "f1_score"}, "mean": None},      # bad → counted
+                {"name": {"name": "rouge_l"}, "mean": "banana"},   # bad → counted
             ],
         }
     ]
     data = HelmAdapter().parse(raw)
     assert data.n_examples == 1
-    assert data.examples[0].scores["model"] == 1.0    # exact_match kept
-    assert data.metadata["skipped_rows"] == 2          # f1_score + rouge_l, not the instance
+    assert data.examples[0].scores["model"] == 1.0
+    assert data.metadata["skipped_rows"] == 2  # f1_score + rouge_l, not the instance
 
 
 def test_helm_skips_entry_with_missing_stats_list():
@@ -280,6 +336,24 @@ def test_helm_skips_entry_with_missing_stats_list():
     data = HelmAdapter().parse(raw)
     assert data.n_examples == 1
     assert data.metadata["skipped_rows"] == 1
+
+
+def test_helm_skips_entry_with_missing_instance_id():
+    """Missing instance_id must be skip+counted, not silently given an index ID."""
+    raw = [
+        {
+            # no instance_id — synthetic index "0" could collide with a real "0"
+            "stats": [{"name": {"name": "exact_match"}, "mean": 1.0}],
+        },
+        {
+            "instance_id": "id1",
+            "stats": [{"name": {"name": "exact_match"}, "mean": 0.5}],
+        },
+    ]
+    data = HelmAdapter().parse(raw)
+    assert data.n_examples == 1          # only the valid entry kept
+    assert data.metadata["skipped_rows"] == 1
+    assert data.examples[0].id == "id1"  # the good entry is present, not the bad one
 
 
 def test_helm_raises_when_nothing_is_parsable():
@@ -400,9 +474,9 @@ def test_helm_does_not_false_positive_on_any_existing_json_fixture():
         raw = _load(f)
         detected = a.detect(raw)
         if f.name == "helm_per_instance_stats.json":
-            assert detected, f.name          # our own fixture must detect
+            assert detected, f.name
         else:
-            assert not detected, f.name      # nothing else may
+            assert not detected, f.name
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +498,7 @@ def test_no_earlier_adapter_claims_a_helm_file():
 
 
 # ---------------------------------------------------------------------------
-# End-to-end: load_suite picks up all metrics
+# End-to-end: load_suite picks up quality metrics, filters bookkeeping
 # ---------------------------------------------------------------------------
 
 def test_helm_end_to_end_suite_ingest():
@@ -432,5 +506,6 @@ def test_helm_end_to_end_suite_ingest():
     path = str(_TESTS_DIR / "fixtures" / "helm_per_instance_stats.json")
     suite = load_suite(path)
     assert "exact_match" in suite
+    assert "num_trials" not in suite       # bookkeeping filtered end-to-end
     assert all(data.source_format == "helm" for data in suite.values())
     assert suite["exact_match"].n_examples == 3
