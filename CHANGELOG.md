@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed-example predictive rerun statistics.** Added a deterministic
+  Welch-Satterthwaite normal-theory approximation for independent run streams
+  at an explicit future run count. Its model-specific probability estimates the
+  strict event `future B - A < 0`. Its `central_mass` range describes fitted
+  model mass, not calibrated coverage or a posterior probability of latent
+  superiority. The pure primitive keeps existing inference and audit output
+  unchanged (#130).
 - **Streaming ingestion for large JSONL and CSV files.** `core/ingest.py` no longer calls `Path.read_text()` for files above the 64 MiB threshold — the raw file string is never materialised. For the common long-format JSONL case (`model` + `score` columns), records are extracted row-by-row via `_stream_records_from_jsonl()` (measured peak ~0.21× file size on payload-heavy rows). CSV is consumed via `csv.DictReader` on an open file handle. Large `.json` files are also streamed when the optional `ijson` extra is installed (`pip install "evaltrust[streaming]"`); without it the file falls back to a full load with a logged warning. Records and `EvalData` remain O(n) in row count — this PR eliminates the full-file string, not the record list (fixes #80).
 - **Langfuse adapter.** Public Scores API exports are detected structurally and
   mapped from trace IDs, score names, and typed values into metric suites. Both
@@ -22,8 +29,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Session/experiment-level scores get a specific unsupported-subject error.
 - **`EvalData.paired_run_differences()`** exposes per-example, per-run
   differences (`score_B - score_A`, runs aligned by index) to the comparison
-  layer. Additive and unused for now; it is the input for the upcoming run-aware
-  estimator (#130). The default score-based path is unchanged.
+  layer. Additive and unused for now; it is not an input to the fixed-example
+  predictive rerun primitive, which consumes A and B streams independently.
+  The default score-based path is unchanged.
 - **Governance & supply-chain artifacts.** The security policy now states
   explicitly that EvalTrust makes no network calls and sends no telemetry, and
   documents the (small) runtime dependency set. Added a CycloneDX SBOM: generate
