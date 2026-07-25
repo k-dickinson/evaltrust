@@ -26,7 +26,8 @@ from .audit.runner import run_audit
 from .audit.suite import audit_suite
 from .audit.verdict import _LEVEL_RANK, VerdictLevel, coerce_level
 from .config import AuditConfig
-from .core.ingest import load_comparison, load_suite
+from .audit.two_sample import audit_two_sample
+from .core.ingest import load_comparison, load_run_level, load_suite
 from .diff import compare
 from .report.html import render_html
 from .report.terminal import (
@@ -111,6 +112,15 @@ def audit(
         None, "--slice-by",
         help="Break the comparison down by this per-example attribute "
              "(e.g. category, difficulty, language)."),
+    run_level: bool = typer.Option(
+        False, "--run-level",
+        help=(
+            "Treat the input as run-level (aggregate) scores — one total score "
+            "per run, no per-example breakdown.  Runs an unpaired two-sample "
+            "comparison (bootstrap P(A>B) + Mann-Whitney U) instead of the "
+            "standard paired path.  Requires exactly one file and both "
+            "--model-a and --model-b (or two-column wide CSV)."
+        )),
     strict: bool = typer.Option(
         False, "--strict", help="Exit non-zero if confidence is Low."),
     fail_under: Optional[str] = typer.Option(
@@ -152,6 +162,92 @@ def audit(
                                    ("all_pairs", all_pairs))
                  if v is not None}
     cfg = replace(cfg, **overrides)
+
+    # ---- Run-level (unpaired) path ----
+    if run_level:
+        if len(results) != 1:
+            _err.print("[red]--run-level requires exactly one input file.[/red]")
+            raise typer.Exit(code=2)
+        try:
+            rl_data = load_run_level(results[0], model_a=model_a, model_b=model_b)
+        except (FileNotFoundError, ValueError) as e:
+            _err.print(f"[red]{e}[/red]")
+            raise typer.Exit(code=2)
+        findings = audit_two_sample(
+            rl_data,
+            alpha=cfg.alpha,
+            confidence=1.0 - cfg.alpha,
+            n_resamples=10_000,
+            seed=cfg.seed,
+        )
+        from .core.schema import Status
+        from .versions import METHODOLOGY_VERSION
+
+        # Build a lightweight report dict for JSON / plain output.
+        report_dict = {
+            "schema_version": SCHEMA_VERSION,
+            "methodology_version": METHODOLOGY_VERSION,
+            "comparison_path": "unpaired_two_sample",
+            "model_a": rl_data.model_a,
+            "model_b": rl_data.model_b,
+            "n_runs_a": rl_data.n_a,
+            "n_runs_b": rl_data.n_b,
+            "source_format": rl_data.source_format,
+            "findings": [f.to_dict() for f in findings],
+        }
+
+        if as_json:
+            typer.echo(json.dumps(report_dict, indent=2))
+        else:
+            from rich.console import Console as _Console
+            from rich.table import Table
+            _con = _Console()
+            _con.print(
+                f"\n[bold]Run-level two-sample audit:[/bold] "
+                f"[cyan]{rl_data.model_a}[/cyan] vs [cyan]{rl_data.model_b}[/cyan]  "
+                f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
+            )
+            for f in findings:
+                icon = {"pass": "✓", "warn": "⚠", "fail": "✗", "skip": "–"}.get(
+                    f.status.value, "?"
+                )
+                colour = {"pass": "green", "warn": "yellow", "fail": "red",
+                          "skip": "dim"}.get(f.status.value, "white")
+                _con.print(f"  [{colour}]{icon}[/{colour}] {f.title}")
+                if explain:
+                    _con.print(f"    [dim]{f.how_detected}[/dim]")
+            _con.print()
+
+        if html_out is not None:
+            _warn.print(
+                "[yellow]--html is not yet supported for --run-level audits.[/yellow]"
+            )
+
+        # Exit code: fail if --strict or --fail-under and worst finding is bad.
+        worst_status = max(
+            (f.status for f in findings),
+            key=lambda s: {
+                Status.FAIL: 3, Status.WARN: 2,
+                Status.PASS: 1, Status.SKIP: 0
+            }[s],
+        )
+        level_str = {
+            Status.PASS: "high",
+            Status.WARN: "moderate",
+            Status.FAIL: "low",
+            Status.SKIP: "low",
+        }[worst_status]
+        _run_level_level = coerce_level(level_str)
+        threshold = fail_under if fail_under is not None else ("moderate" if strict else None)
+        if threshold is not None:
+            try:
+                minimum = coerce_level(threshold)
+            except ValueError as e:
+                _err.print(f"[red]{e}[/red]")
+                raise typer.Exit(code=2)
+            if _LEVEL_RANK[_run_level_level] < _LEVEL_RANK[minimum]:
+                raise typer.Exit(code=1)
+        return
 
     suite_report = None
     report = None
