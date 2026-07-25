@@ -889,14 +889,38 @@ def load_run_level(
 
     suffix = p.suffix.lower()
 
-    # --- JSON: dict mapping model -> [scores] ---
+    # --- JSON / JSONL: dict mapping model -> [scores] ---
     if suffix in (".json", ".jsonl"):
-        try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Could not parse '{p.name}' as JSON: {e.msg}"
-            ) from e
+        # FIX (image 6, part 2): true JSONL — try each line as a separate JSON
+        # object when the file has the .jsonl extension; fall back to whole-file
+        # parsing for .json (and for single-object JSONL files).
+        raw: dict | None = None
+        text_j = p.read_text(encoding="utf-8")
+        if suffix == ".jsonl":
+            # Try to parse as newline-delimited JSON objects merged into one dict.
+            merged: dict = {}
+            parse_error: json.JSONDecodeError | None = None
+            for line in text_j.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as e:
+                    parse_error = e
+                    break
+                if isinstance(obj, dict):
+                    merged.update(obj)
+            if parse_error is None and merged:
+                raw = merged
+        if raw is None:
+            # Whole-file JSON parse (covers .json and single-object .jsonl).
+            try:
+                raw = json.loads(text_j)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Could not parse '{p.name}' as JSON: {e.msg}"
+                ) from e
         if not isinstance(raw, dict):
             raise ValueError(
                 f"Run-level JSON must be an object mapping model names to score "
@@ -920,6 +944,22 @@ def load_run_level(
                     f"Model {m!r} not found in run-level JSON; "
                     f"available: {models_in_file!r}."
                 )
+        # FIX (image 6, part 1): validate that each value is a list of numbers.
+        # np.array(scalar, dtype=float) produces a 0-d array that breaks
+        # _p_a_gt_b's indexing; catch this before it reaches the stats layer.
+        for m, arr_key in ((model_a, "model_a"), (model_b, "model_b")):
+            val = raw[m]
+            if not isinstance(val, list):
+                raise ValueError(
+                    f"Run-level JSON: scores for model {m!r} must be a list of "
+                    f"numbers, got {type(val).__name__}."
+                )
+            for i, v in enumerate(val):
+                if not isinstance(v, (int, float)):
+                    raise ValueError(
+                        f"Run-level JSON: score at index {i} for model {m!r} "
+                        f"is not a number ({v!r})."
+                    )
         scores_a = np.array(raw[model_a], dtype=float)
         scores_b = np.array(raw[model_b], dtype=float)
         return RunLevelData(
@@ -930,10 +970,21 @@ def load_run_level(
 
     # --- CSV: wide or long ---
     text = p.read_text(encoding="utf-8")
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None:
+    # FIX (image 7): DictReader yields rows keyed by the *original* (unstripped)
+    # header text.  Stripping only the fieldnames list but then indexing rows by
+    # the stripped name causes KeyError for headers with surrounding whitespace.
+    # Solution: re-key each row using the stripped field names so all lookups
+    # below work correctly regardless of whitespace in the CSV header.
+    _raw_reader = csv.DictReader(io.StringIO(text))
+    if _raw_reader.fieldnames is None:
         raise ValueError(f"'{p.name}' appears to be an empty CSV.")
-    fieldnames = [f.strip() for f in reader.fieldnames]
+    fieldnames = [f.strip() for f in _raw_reader.fieldnames]
+    # Build normalised rows: {stripped_header: value} for every row.
+    _key_map = {orig: stripped for orig, stripped in zip(_raw_reader.fieldnames, fieldnames)}
+    reader = (
+        {_key_map[k]: v for k, v in row.items() if k in _key_map}
+        for row in _raw_reader
+    )
 
     # Skip metadata columns that are never model names.
     _META_COLS = {"run", "run_id", "seed", "iteration", "trial", "index"}
@@ -1001,13 +1052,19 @@ def load_run_level(
     from ..adapters.common import coerce_score
     a_vals, b_vals = [], []
     for row in reader:
+        # FIX (image 8): parse both scores before appending either one so a
+        # parse failure on column B does not leave a half-ingested A value.
+        # Also validate that b_vals is non-empty (not just a_vals) so a
+        # totally unreadable B column is caught here with a clear error.
         try:
-            a_vals.append(coerce_score(row[model_a]))
-            b_vals.append(coerce_score(row[model_b]))
+            a_val = coerce_score(row[model_a])
+            b_val = coerce_score(row[model_b])
         except (ValueError, KeyError):
             continue
+        a_vals.append(a_val)
+        b_vals.append(b_val)
 
-    if not a_vals:
+    if not a_vals or not b_vals:
         raise ValueError(f"No readable score rows found in '{p.name}'.")
 
     scores_a = np.array(a_vals, dtype=float)

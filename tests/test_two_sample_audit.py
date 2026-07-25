@@ -316,3 +316,97 @@ def test_run_level_data_n_properties():
     )
     assert d.n_a == 2
     assert d.n_b == 3
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for CodeRabbit review fixes
+# ---------------------------------------------------------------------------
+
+def test_decision_inconclusive_message_is_accurate_when_significant():
+    """Fix (image 1): inconclusive branch must not claim 'not < alpha' when significant."""
+    # Manufacture a borderline case: significant p-value but CI straddles 0.5.
+    # Use very few runs so CI is wide and manually craft data around 0.5.
+    rng = np.random.default_rng(77)
+    a = rng.normal(0.55, 0.15, 6)
+    b = rng.normal(0.50, 0.15, 6)
+    decision = by_check(audit_two_sample(make_run_level(a, b), seed=0), "decision")
+    # Whatever the outcome, how_detected must not say "not < alpha" when p is actually < alpha.
+    p_mw = decision.details["p_value_mann_whitney"]
+    alpha = decision.details["alpha"]
+    if p_mw < alpha:
+        assert "not < alpha" not in decision.how_detected, (
+            "When p < alpha the how_detected text must not claim 'not < alpha'"
+        )
+
+
+def test_effect_size_labels_are_by_model_not_rank():
+    """Fix (image 2): descriptive stats must be keyed to model_a/model_b, not leader/trailer."""
+    # B beats A — leader=model_b, trailer=model_a.
+    a = np.array([0.5, 0.52, 0.51, 0.50, 0.53])
+    b = np.array([0.8, 0.82, 0.81, 0.80, 0.83])
+    effect = by_check(audit_two_sample(make_run_level(a, b, model_a="lowA", model_b="highB"), seed=0), "effect_size")
+    # mean_a in details must equal np.mean(a), not np.mean(b).
+    assert effect.details["mean_a"] == pytest.approx(np.mean(a), abs=1e-6), (
+        "mean_a must always refer to scores_a, not the leader's scores"
+    )
+    assert effect.details["mean_b"] == pytest.approx(np.mean(b), abs=1e-6), (
+        "mean_b must always refer to scores_b, not the trailer's scores"
+    )
+    # how_detected must label means by model name, not by rank.
+    assert "lowA" in effect.how_detected
+    assert "highB" in effect.how_detected
+
+
+def test_precision_no_negative_shortage_when_sufficient_and_not_significant():
+    """Fix (image 3): not-significant + sufficient must not produce negative shortage."""
+    rng = np.random.default_rng(2025)
+    # Same distribution, plenty of runs → not significant, sufficient.
+    a = rng.normal(0.7, 0.1, 20)
+    b = rng.normal(0.7, 0.1, 20)
+    precision = by_check(audit_two_sample(make_run_level(a, b), seed=0), "precision")
+    assert precision.details["sufficient"] is True
+    # The fix message text should NOT contain a negative number.
+    assert "-" not in precision.how_to_fix or "unlikely" in precision.how_to_fix
+
+
+def test_load_run_level_json_scalar_value_raises():
+    """Fix (image 6, part 1): scalar JSON values must raise a clear ValueError."""
+    import tempfile, json as _json
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        _json.dump({"A": 0.8, "B": [0.7, 0.75]}, f)
+        fname = f.name
+    with pytest.raises(ValueError, match="must be a list"):
+        load_run_level(fname, model_a="A", model_b="B")
+
+
+def test_load_run_level_jsonl_parsed_correctly(tmp_path):
+    """Fix (image 6, part 2): true JSONL (one JSON object per line) must parse."""
+    jsonl = '{"alpha": [0.8, 0.85, 0.82]}\n{"beta": [0.7, 0.72, 0.71]}\n'
+    p = tmp_path / "scores.jsonl"
+    p.write_text(jsonl, encoding="utf-8")
+    data = load_run_level(str(p), model_a="alpha", model_b="beta")
+    assert data.n_a == 3
+    assert data.n_b == 3
+    np.testing.assert_allclose(data.scores_a, [0.8, 0.85, 0.82])
+
+
+def test_load_run_level_wide_csv_whitespace_headers(tmp_path):
+    """Fix (image 7): headers with surrounding whitespace must not cause KeyError."""
+    csv_text = " model_a , model_b \n0.81,0.79\n0.83,0.82\n"
+    p = tmp_path / "spaced.csv"
+    p.write_text(csv_text, encoding="utf-8")
+    data = load_run_level(str(p))
+    assert data.model_a == "model_a"
+    assert data.n_a == 2
+
+
+def test_load_run_level_wide_csv_atomic_row_ingestion(tmp_path):
+    """Fix (image 8): a bad score in column B must not half-ingest the A value."""
+    csv_text = "model_a,model_b\n0.81,0.79\n0.83,bad_value\n0.80,0.78\n"
+    p = tmp_path / "partial.csv"
+    p.write_text(csv_text, encoding="utf-8")
+    data = load_run_level(str(p))
+    # The bad row (0.83, bad_value) must be dropped entirely — not 0.83 ingested alone.
+    assert data.n_a == data.n_b == 2
+    np.testing.assert_allclose(sorted(data.scores_a), [0.80, 0.81])
+    np.testing.assert_allclose(sorted(data.scores_b), [0.78, 0.79])

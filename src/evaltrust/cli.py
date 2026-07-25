@@ -198,13 +198,36 @@ def audit(
 
         if as_json:
             typer.echo(json.dumps(report_dict, indent=2))
+        elif plain or md:
+            # FIX (image 4): --plain and --md were silently ignored; now both
+            # emit the same plain-text summary (no colour, ASCII icons only).
+            _warn.print(
+                "[yellow]--md/--plain are not yet fully supported for --run-level "
+                "audits; printing the standard plain summary instead.[/yellow]"
+            )
+            icon_map = {"pass": "[PASS]", "warn": "[WARN]", "fail": "[FAIL]", "skip": "[SKIP]"}
+            typer.echo(
+                f"\nRun-level two-sample audit: "
+                f"{rl_data.model_a} vs {rl_data.model_b}  "
+                f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
+            )
+            for f in findings:
+                icon = icon_map.get(f.status.value, "[?]")
+                typer.echo(f"  {icon} {f.title}")
+                if explain:
+                    typer.echo(f"    {f.how_detected}")
+            typer.echo("")
         else:
+            # FIX (image 5): model names and finding titles may contain square
+            # brackets (e.g. "gpt-4[preview]") which Rich interprets as markup
+            # tags.  Escape all interpolated values before passing to _con.print.
             from rich.console import Console as _Console
-            from rich.table import Table
+            from rich.markup import escape as _escape
             _con = _Console()
             _con.print(
                 f"\n[bold]Run-level two-sample audit:[/bold] "
-                f"[cyan]{rl_data.model_a}[/cyan] vs [cyan]{rl_data.model_b}[/cyan]  "
+                f"[cyan]{_escape(rl_data.model_a)}[/cyan] vs "
+                f"[cyan]{_escape(rl_data.model_b)}[/cyan]  "
                 f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
             )
             for f in findings:
@@ -213,9 +236,9 @@ def audit(
                 )
                 colour = {"pass": "green", "warn": "yellow", "fail": "red",
                           "skip": "dim"}.get(f.status.value, "white")
-                _con.print(f"  [{colour}]{icon}[/{colour}] {f.title}")
+                _con.print(f"  [{colour}]{icon}[/{colour}] {_escape(f.title)}")
                 if explain:
-                    _con.print(f"    [dim]{f.how_detected}[/dim]")
+                    _con.print(f"    [dim]{_escape(f.how_detected)}[/dim]")
             _con.print()
 
         if html_out is not None:

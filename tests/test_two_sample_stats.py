@@ -39,11 +39,11 @@ def test_p_a_gt_b_all_ties():
 
 
 def test_p_a_gt_b_mixed():
-    # a=[0,1], b=[0,1] → 2 wins (a=1>b=0), 2 losses (a=0<b=1), 2 ties → (2 + 1) / 4 = 0.75
+    # a=[0,1], b=[0,1] → 4 pairs:
+    #   (0,0)=tie, (0,1)=loss, (1,0)=win, (1,1)=tie
+    #   wins=1, ties=2, losses=1 → (1 + 0.5*2)/4 = 2/4 = 0.5
     a = np.array([0.0, 1.0])
     b = np.array([0.0, 1.0])
-    # pairs: (0,0)=tie, (0,1)=loss, (1,0)=win, (1,1)=tie
-    # wins=1, ties=2, losses=1 → (1 + 0.5*2)/4 = 2/4 = 0.5
     assert _p_a_gt_b(a, b) == pytest.approx(0.5)
 
 

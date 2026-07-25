@@ -13,7 +13,8 @@ findings parallel to the paired Statistical Validity audit:
 ``effect_size``
     How large is the difference?  Reported as P(A > B) distance from 0.5
     (so 0.0 = no difference, +0.5 = A always wins, -0.5 = B always wins)
-    together with the raw score means and standard deviations.
+    together with the raw score means and standard deviations, labelled by
+    the fixed model names (not the rank-dependent leader/trailer).
 
 ``precision``
     Was the sample large enough?  Reports the per-model run counts and warns
@@ -108,12 +109,16 @@ def audit_two_sample(
             n_a=data.n_a,
             n_b=data.n_b,
         ),
+        # FIX (image 2): pass model_a/model_b explicitly so descriptive stats
+        # are always labelled by the fixed model name, never by rank.
         _effect_size(
             a=a,
             b=b,
             p_hat=p_hat,
             leader=leader,
             trailer=trailer,
+            model_a=model_a,
+            model_b=model_b,
         ),
         _precision(
             n_a=data.n_a,
@@ -179,12 +184,17 @@ def _decision(
         fix = "Treat the two models as equivalent on aggregate quality. Decide on cost or speed."
         outcome = "equivalent"
     else:
+        # FIX (image 1): inconclusive branch — p_mw may or may not be < alpha
+        # (e.g. significant but CI straddles 0.5).  State the actual p-value
+        # without asserting the comparison to alpha; the CI width is the real
+        # reason this case is inconclusive.
         title = f"Run-level comparison of {model_a} vs {model_b} is inconclusive"
         status = Status.FAIL
         how = (
-            f"Mann-Whitney p = {p_mw:.4f} (not < alpha {alpha}), and the "
+            f"Mann-Whitney p = {p_mw:.4f} "
+            f"({'< ' if significant else 'not < '}alpha {alpha}), but the "
             f"{conf_pct}% CI on P({leader} > {trailer}) = {ci_str} "
-            f"is too wide to draw a firm conclusion. "
+            f"still includes 0.5, so no firm conclusion follows. "
             f"({n_a} runs for {model_a}, {n_b} for {model_b}.)"
         )
         fix = "Don't call a winner yet. Collect more runs per model first."
@@ -224,15 +234,21 @@ def _effect_size(
     p_hat: float,
     leader: str,
     trailer: str,
+    # FIX (image 2): always label descriptive stats by the fixed model name,
+    # not by rank — mean_a/std_a always describe scores_a regardless of which
+    # model is currently the leader.
+    model_a: str,
+    model_b: str,
 ) -> Finding:
     """Effect-size finding: P(A>B) distance from 0.5 + descriptive stats."""
     # Distance of P(A>B) from 0.5.  Ranges 0–0.5 so it mirrors Cohen's d sign.
     # Named "common language effect size" (CLES), also known as A12 statistic.
     cles = abs(p_hat - 0.5)
 
+    # Always keyed to the fixed arrays: mean_a/std_a describe scores_a (model_a).
     mean_a, mean_b = float(np.mean(a)), float(np.mean(b))
-    std_a, std_b = float(np.std(a, ddof=1)) if a.size > 1 else 0.0, \
-                   float(np.std(b, ddof=1)) if b.size > 1 else 0.0
+    std_a = float(np.std(a, ddof=1)) if a.size > 1 else 0.0
+    std_b = float(np.std(b, ddof=1)) if b.size > 1 else 0.0
 
     # Map CLES to a label (Vargha-Delaney A12 thresholds: 0.06 small, 0.14 medium, 0.21 large)
     if cles < 0.06:
@@ -247,10 +263,10 @@ def _effect_size(
     meaningful = magnitude in {"medium", "large"}
 
     how = (
-        f"P(A > B) = {p_hat:.3f} → common-language effect size = {cles:.3f} "
+        f"P(A > B) = {p_hat:.3f} — common-language effect size = {cles:.3f} "
         f"({magnitude} by Vargha-Delaney thresholds). "
-        f"{leader}: mean {mean_a:.4f} ± {std_a:.4f} (SD); "
-        f"{trailer}: mean {mean_b:.4f} ± {std_b:.4f} (SD)."
+        f"{model_a}: mean {mean_a:.4f} +/- {std_a:.4f} (SD); "
+        f"{model_b}: mean {mean_b:.4f} +/- {std_b:.4f} (SD)."
     )
 
     return Finding(
@@ -312,17 +328,33 @@ def _precision(
             f"per model is recommended for stable bootstrap CIs."
         )
         fix = (
-            f"Collect more runs (aim for ≥ {_MIN_RUNS_RECOMMENDED} per model) "
+            f"Collect more runs (aim for >= {_MIN_RUNS_RECOMMENDED} per model) "
             "to narrow the confidence interval before acting on this result."
         )
+    # FIX (image 3): split the "not significant + sufficient" case out of the
+    # catch-all else branch so shortage is never computed (and never negative)
+    # when both models already meet the minimum.
+    elif not significant and sufficient:
+        title = "Run count was sufficient, but the comparison was not conclusive"
+        status = Status.WARN
+        how = (
+            f"{model_a} has {n_a} runs, {model_b} has {n_b} runs — both meet "
+            f"the recommended minimum of {_MIN_RUNS_RECOMMENDED} runs per model, "
+            f"so the inconclusive result reflects a genuinely small gap."
+        )
+        fix = (
+            "More runs of the same size are unlikely to change the verdict; "
+            "the two models look close on aggregate quality."
+        )
     else:
+        # not significant and not sufficient
+        shortage = _MIN_RUNS_RECOMMENDED - min_n
         title = "Run count may be too small"
         status = Status.WARN
-        shortage = _MIN_RUNS_RECOMMENDED - min_n
         how = (
             f"{model_a} has {n_a} runs, {model_b} has {n_b} runs. "
             f"The minimum recommended is {_MIN_RUNS_RECOMMENDED} runs per model; "
-            f"{'both meet' if sufficient else 'at least one falls below'} that threshold."
+            f"at least one falls below that threshold."
         )
         fix = (
             f"Collect ~{shortage} more runs for the smaller sample "
