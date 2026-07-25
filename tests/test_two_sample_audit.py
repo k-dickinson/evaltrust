@@ -323,50 +323,109 @@ def test_run_level_data_n_properties():
 # ---------------------------------------------------------------------------
 
 def test_decision_inconclusive_message_is_accurate_when_significant():
-    """Fix (image 1): inconclusive branch must not claim 'not < alpha' when significant."""
-    # Manufacture a borderline case: significant p-value but CI straddles 0.5.
-    # Use very few runs so CI is wide and manually craft data around 0.5.
-    rng = np.random.default_rng(77)
-    a = rng.normal(0.55, 0.15, 6)
-    b = rng.normal(0.50, 0.15, 6)
-    decision = by_check(audit_two_sample(make_run_level(a, b), seed=0), "decision")
-    # Whatever the outcome, how_detected must not say "not < alpha" when p is actually < alpha.
-    p_mw = decision.details["p_value_mann_whitney"]
-    alpha = decision.details["alpha"]
-    if p_mw < alpha:
-        assert "not < alpha" not in decision.how_detected, (
-            "When p < alpha the how_detected text must not claim 'not < alpha'"
-        )
+    """Fix (image 1): inconclusive branch must not claim 'not < alpha' when significant.
+
+    Constructed deterministically: we monkeypatch mann_whitney_u to return a
+    significant p-value while bootstrap_p_a_gt_b returns a CI that straddles 0.5,
+    guaranteeing the inconclusive branch is reached with p < alpha every time.
+    """
+    import unittest.mock as mock
+    from evaltrust.audit import two_sample as ts_mod
+
+    # CI straddles 0.5 → inconclusive; p < alpha → significant.
+    with mock.patch.object(ts_mod, "bootstrap_p_a_gt_b", return_value=(0.55, 0.40, 0.70)):
+        with mock.patch.object(ts_mod, "mann_whitney_u", return_value=(42.0, 0.02)):
+            data = make_run_level([0.6] * 10, [0.5] * 10)
+            decision = by_check(audit_two_sample(data, alpha=0.05, seed=0), "decision")
+
+    # The branch IS inconclusive (CI straddles 0.5) but the test IS significant.
+    assert decision.details["outcome"] == "inconclusive"
+    assert decision.details["p_value_mann_whitney"] == pytest.approx(0.02)
+    # The how_detected text must NOT say "not < alpha" when p is actually < alpha.
+    assert "not < alpha" not in decision.how_detected, (
+        "Inconclusive branch must not claim 'not < alpha' when p is significant; "
+        f"got: {decision.how_detected!r}"
+    )
 
 
 def test_effect_size_labels_are_by_model_not_rank():
-    """Fix (image 2): descriptive stats must be keyed to model_a/model_b, not leader/trailer."""
-    # B beats A — leader=model_b, trailer=model_a.
+    """Fix (image 2): descriptive stats must be keyed to model_a/model_b, not leader/trailer.
+
+    The regression being guarded: when B leads, _effect_size previously labelled
+    mean_a as 'trailer' and mean_b as 'leader', so the report said 'leader: mean 0.81'
+    when the leader was actually model_b.  We assert:
+    - mean_a/mean_b details equal np.mean(a)/np.mean(b) respectively, and
+    - how_detected uses the model names (not 'leader'/'trailer' rank words) for the means.
+    """
+    # B beats A — leader=model_b ("highB"), trailer=model_a ("lowA").
     a = np.array([0.5, 0.52, 0.51, 0.50, 0.53])
     b = np.array([0.8, 0.82, 0.81, 0.80, 0.83])
-    effect = by_check(audit_two_sample(make_run_level(a, b, model_a="lowA", model_b="highB"), seed=0), "effect_size")
-    # mean_a in details must equal np.mean(a), not np.mean(b).
+    effect = by_check(
+        audit_two_sample(make_run_level(a, b, model_a="lowA", model_b="highB"), seed=0),
+        "effect_size",
+    )
+
+    # Descriptive stats must be keyed by fixed model name, not rank.
     assert effect.details["mean_a"] == pytest.approx(np.mean(a), abs=1e-6), (
         "mean_a must always refer to scores_a, not the leader's scores"
     )
     assert effect.details["mean_b"] == pytest.approx(np.mean(b), abs=1e-6), (
         "mean_b must always refer to scores_b, not the trailer's scores"
     )
-    # how_detected must label means by model name, not by rank.
-    assert "lowA" in effect.how_detected
-    assert "highB" in effect.how_detected
+
+    # how_detected must use the fixed model names for mean/SD lines.
+    assert "lowA: mean" in effect.how_detected, (
+        f"Expected 'lowA: mean ...' in how_detected; got: {effect.how_detected!r}"
+    )
+    assert "highB: mean" in effect.how_detected, (
+        f"Expected 'highB: mean ...' in how_detected; got: {effect.how_detected!r}"
+    )
+    # The rank words 'leader:' and 'trailer:' must NOT appear in the means section.
+    assert "leader: mean" not in effect.how_detected, (
+        "how_detected must label means by model name, not by 'leader'"
+    )
+    assert "trailer: mean" not in effect.how_detected, (
+        "how_detected must label means by model name, not by 'trailer'"
+    )
 
 
 def test_precision_no_negative_shortage_when_sufficient_and_not_significant():
-    """Fix (image 3): not-significant + sufficient must not produce negative shortage."""
+    """Fix (image 3): not-significant + sufficient must not produce negative shortage.
+
+    The regression: when both models have >= _MIN_RUNS_RECOMMENDED runs but the
+    test is not significant, the old else-branch computed shortage = 10 - min_n
+    which goes negative, producing text like 'Collect ~-10 more runs'.
+
+    The fix splits this into its own elif branch.  This test:
+    - asserts the non-significant + sufficient precondition holds (no escape hatch),
+    - then directly checks that no signed numeric value (e.g. '-10') appears in
+      the how_to_fix text.
+    """
+    import re
     rng = np.random.default_rng(2025)
-    # Same distribution, plenty of runs → not significant, sufficient.
+    # Same distribution, plenty of runs → sufficient; non-significant expected.
     a = rng.normal(0.7, 0.1, 20)
     b = rng.normal(0.7, 0.1, 20)
-    precision = by_check(audit_two_sample(make_run_level(a, b), seed=0), "precision")
-    assert precision.details["sufficient"] is True
-    # The fix message text should NOT contain a negative number.
-    assert "-" not in precision.how_to_fix or "unlikely" in precision.how_to_fix
+    findings = audit_two_sample(make_run_level(a, b), seed=0)
+    precision = by_check(findings, "precision")
+    decision = by_check(findings, "decision")
+
+    # Precondition: sufficient must be True (both models have 20 >= 10 runs).
+    assert precision.details["sufficient"] is True, (
+        "Test precondition failed: expected sufficient=True with 20 runs per model"
+    )
+    # Precondition: comparison must be non-significant or inconclusive (not a
+    # clear PASS), so we're in the branch that used to compute negative shortage.
+    assert decision.details["outcome"] != "significant", (
+        "Test precondition failed: expected non-significant outcome with same-distribution data"
+    )
+
+    # The fix text must contain no negative integer (e.g. '-10', '-5').
+    negative_number = re.search(r"-\d+", precision.how_to_fix)
+    assert negative_number is None, (
+        f"how_to_fix must not contain a negative shortage; "
+        f"found {negative_number.group()!r} in: {precision.how_to_fix!r}"
+    )
 
 
 def test_load_run_level_json_scalar_value_raises():
