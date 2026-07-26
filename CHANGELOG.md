@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Opt-in predictive rerun audit wiring.** Added `--run-aware`, explicit `--future-runs`, eligibility SKIP counts, and an advisory normal-theory predictive finding without changing default output or the verdict (#131).
 - **Fixed-example predictive rerun statistics.** Added a deterministic
   Welch-Satterthwaite normal-theory approximation for independent run streams
   at an explicit future run count. Its model-specific probability estimates the

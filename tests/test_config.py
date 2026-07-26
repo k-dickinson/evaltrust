@@ -14,6 +14,43 @@ def test_defaults_match_the_documented_values():
     assert c.judge_agreement_threshold == 0.8
     assert c.judge_correlation_threshold == 0.8
     assert c.bayesian is False
+    assert c.run_aware is False
+    assert c.run_aware_future_runs is None
+
+
+def test_run_aware_fields_participate_in_equality_and_hash():
+    default_a = AuditConfig()
+    default_b = AuditConfig()
+    enabled = AuditConfig(run_aware=True, run_aware_future_runs=3)
+    future_count_only = AuditConfig(run_aware_future_runs=3)
+
+    assert default_a == default_b
+    assert hash(default_a) == hash(default_b)
+    assert enabled != default_a
+    assert hash(enabled) != hash(default_a)
+    assert future_count_only != default_a
+    assert hash(future_count_only) != hash(default_a)
+
+
+@pytest.mark.parametrize("future_runs", [None, True, 0, -1, 1.5, "3"])
+def test_run_aware_requires_a_positive_real_integer(future_runs):
+    with pytest.raises(ValueError, match="run_aware_future_runs"):
+        AuditConfig(run_aware=True, run_aware_future_runs=future_runs)
+
+
+@pytest.mark.parametrize("future_runs", [True, 0, -1, 1.5, "3"])
+def test_future_run_count_is_inert_when_run_aware_is_off(future_runs):
+    config = AuditConfig(run_aware=False, run_aware_future_runs=future_runs)
+    assert config.run_aware_future_runs == future_runs
+
+
+def test_run_aware_fields_load_from_toml(tmp_path):
+    (tmp_path / ".evaltrust.toml").write_text(
+        "run_aware = true\nrun_aware_future_runs = 4\n"
+    )
+    config = AuditConfig.load(start_dir=str(tmp_path))
+    assert config.run_aware is True
+    assert config.run_aware_future_runs == 4
 
 
 def test_bayesian_is_loadable_from_dict_and_toml(tmp_path):

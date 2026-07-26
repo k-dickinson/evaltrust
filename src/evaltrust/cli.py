@@ -93,6 +93,19 @@ def audit(
         None,
         "--bayesian/--no-bayesian",
         help="Add the Bayesian decisive-pair win probability."),
+    run_aware: Optional[bool] = typer.Option(
+        None,
+        "--run-aware/--no-run-aware",
+        help=(
+            "Add the fixed-example normal-theory predictive rerun finding. "
+            "Requires --future-runs. Approximate-range coverage fell to ~0.933 "
+            "with 8 examples and 3 observed runs, and ~0.937 with 25 examples "
+            "and 6 observed runs, for measured skewed-stream cases."
+        )),
+    future_runs: Optional[int] = typer.Option(
+        None,
+        "--future-runs",
+        help="Future runs per model and example for the run-aware prediction."),
     correction: Optional[str] = typer.Option(
         None, "--correction",
         help="Multiple-comparison correction: bonferroni (default), holm, or none."),
@@ -147,11 +160,17 @@ def audit(
                                    ("equivalence_margin", equivalence_margin),
                                    ("seed", seed),
                                    ("bayesian", bayesian),
+                                   ("run_aware", run_aware),
+                                   ("run_aware_future_runs", future_runs),
                                    ("reference_judge", reference_judge),
                                    ("correction", correction),
                                    ("all_pairs", all_pairs))
                  if v is not None}
-    cfg = replace(cfg, **overrides)
+    try:
+        cfg = replace(cfg, **overrides)
+    except ValueError as e:
+        _err.print(f"[red]Could not apply config: {e}[/red]")
+        raise typer.Exit(code=2)
 
     suite_report = None
     report = None

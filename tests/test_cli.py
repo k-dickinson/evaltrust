@@ -1,6 +1,7 @@
 """Tests for the `evaltrust audit` command."""
 
 import json
+import re
 from importlib.metadata import version as package_version
 
 from typer.testing import CliRunner
@@ -251,6 +252,151 @@ def _has_bayesian_finding(stdout):
         finding["details"].get("check") == "bayesian_win_probability"
         for finding in payload["findings"]
     )
+
+
+def run_aware_file(tmp_path):
+    raw = {
+        "models": ["A", "B"],
+        "examples": [
+            {
+                "id": str(index),
+                "scores": {"A": 0.5, "B": 0.6},
+                "runs": {
+                    "A": [0.2, 0.5, 0.8],
+                    "B": [0.1, 0.6, 1.1],
+                },
+            }
+            for index in range(20)
+        ],
+    }
+    return write(tmp_path, "run-aware.json", raw)
+
+
+def _has_predictive_rerun_finding(stdout):
+    payload = json.loads(stdout)
+    return any(
+        finding["details"].get("check") == "predictive_rerun"
+        for finding in payload["findings"]
+    )
+
+
+def test_run_aware_flags_enable_the_optional_finding(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            run_aware_file(tmp_path),
+            "--run-aware",
+            "--future-runs",
+            "3",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    finding = next(
+        item
+        for item in payload["findings"]
+        if item["details"].get("check") == "predictive_rerun"
+    )
+    assert finding["details"]["future_runs"] == 3
+
+
+def test_run_aware_is_off_by_default_in_cli(tmp_path):
+    result = runner.invoke(app, ["audit", run_aware_file(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    assert not _has_predictive_rerun_finding(result.stdout)
+
+
+def test_omitted_run_aware_flag_preserves_config_true(tmp_path):
+    policy = tmp_path / "run-aware.toml"
+    policy.write_text("run_aware = true\nrun_aware_future_runs = 5\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            run_aware_file(tmp_path),
+            "--config",
+            str(policy),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert _has_predictive_rerun_finding(result.stdout)
+
+
+def test_no_run_aware_overrides_config_true(tmp_path):
+    policy = tmp_path / "run-aware.toml"
+    policy.write_text("run_aware = true\nrun_aware_future_runs = 5\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            run_aware_file(tmp_path),
+            "--config",
+            str(policy),
+            "--no-run-aware",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert not _has_predictive_rerun_finding(result.stdout)
+
+
+def test_future_runs_is_inert_without_run_aware(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            run_aware_file(tmp_path),
+            "--future-runs",
+            "0",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert not _has_predictive_rerun_finding(result.stdout)
+
+
+def test_run_aware_without_future_runs_uses_standard_exit_two_path(tmp_path):
+    result = runner.invoke(
+        app,
+        ["audit", run_aware_file(tmp_path), "--run-aware"],
+    )
+
+    assert result.exit_code == 2
+    assert "run_aware_future_runs" in result.stderr
+
+
+def test_run_aware_with_zero_future_runs_uses_standard_exit_two_path(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            run_aware_file(tmp_path),
+            "--run-aware",
+            "--future-runs",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "run_aware_future_runs" in result.stderr
+
+
+def test_run_aware_help_discloses_measured_coverage_limit():
+    result = runner.invoke(app, ["audit", "--help"], color=False)
+    help_text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout)
+
+    assert result.exit_code == 0
+    assert "--run-aware" in help_text
+    assert "~0.933" in help_text
+    assert "~0.937" in help_text
 
 
 def test_bayesian_flag_enables_the_optional_finding(tmp_path):
