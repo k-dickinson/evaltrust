@@ -162,6 +162,42 @@ with **Bonferroni**: it divides the significance threshold by the number of
 metrics, so a metric is only called a real improvement if it clears the stricter
 bar. The suite's overall confidence is the **weakest** of its metrics.
 
+## Pairwise preference
+
+When your file records judge votes (A wins / B wins / tie) instead of a numeric
+score per model, EvalTrust runs an exact two-sided **sign test** on the decisive
+votes (ties excluded) and reports a seeded win-rate interval. This answers "is the
+preference real, or a coin toss?" See [input formats](input-formats.md) for the
+`winner`/`preference` shape.
+
+## Per-slice comparison (`--slice-by`)
+
+An overall improvement can hide a regression on an important subset. With
+`--slice-by <attribute>`, EvalTrust breaks the comparison down by a per-example
+attribute (category, difficulty, language) and tests each slice at a
+Bonferroni-corrected threshold across the slices actually tested (`alpha / k`).
+A slice is flagged as a **regression** only when it is *significantly opposite* to
+the overall direction, so an underpowered slice never trips the flag (it is still
+listed in `details.slices`). Slice tags come from the nested-JSON `attributes`
+field; see [input formats](input-formats.md).
+
+## All-pairs comparison (`--all-pairs`)
+
+By default a file with several models compares the two strongest. `--all-pairs`
+tests **every** model pair with shared scores and corrects across the pair family
+(`bonferroni` / `holm` / `none`), reporting which distinctions are statistically
+separable. With three or more models it also reports an advisory **rank-stability**
+finding: which leaderboard positions hold under resampling. This finding is
+advisory and never changes the verdict.
+
+## Bayesian view (`--bayesian`)
+
+`--bayesian` adds an advisory finding: the posterior probability that one model
+wins more often on decisive examples, with a credible interval, under a Jeffreys
+`Beta(0.5, 0.5)` prior. It is off by default, never changes the verdict, and
+answers "how confident am I that A beats B?" as a probability rather than a
+p-value.
+
 ## The verdict
 
 The overall verdict follows simple, documented rules rather than a weighted score:
@@ -180,10 +216,22 @@ current release assumes:
 
 - **Paired data.** Both models are scored on the *same* examples, matched by id.
   Unpaired comparisons (different test sets) are out of scope.
-- **Two models per comparison.** A comparison is between two models. A single
-  model is supported too (Score Reliability, above). Multi-metric suites *are*
-  supported (a `metric` column, Bonferroni-corrected), but when a file has more
-  than two *models*, the two strongest by mean are compared rather than every pair.
+- **Default comparison is the top two models.** A single model is supported too
+  (Score Reliability, above). Multi-metric suites *are* supported (a `metric`
+  column, family-corrected). When a file has more than two models, the default
+  still compares the two strongest by mean. Opt into `--all-pairs` to test every
+  declared pair with one shared correction, and to run the advisory rank-stability
+  check on three or more scored models.
+- **Rank stability is advisory, not calibrated confidence.** Under `--all-pairs`,
+  the tool bootstraps example rows (or whole `group_id` clusters when present),
+  recomputes the mean-score ranking each time, and reports rank occupancy,
+  per-position retention, top-1 retention, and full-order retention. A position
+  is stable when its observed model holds it in at least `1 - alpha` of
+  resamples. Exact mean ties split occupancy evenly, so model-name order is never
+  counted as stability. Near ties are unstable by design. Model-dependent
+  missingness can make stability reflect coverage as well as quality. Repeated
+  runs (`Example.runs`) are not consumed. Two-model and multi-metric rank
+  stability are out of scope.
 - **Scalar scores.** Each score is a number. Pairwise-preference judgments
   (A-beats-B votes) are not yet modelled.
 - **Opinionated thresholds.** `alpha` and the equivalence margin are configurable;

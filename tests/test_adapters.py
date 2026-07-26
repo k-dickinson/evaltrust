@@ -699,3 +699,365 @@ def test_no_earlier_adapter_claims_a_ragas_export():
 
 def test_detect_routes_ragas():
     assert detect_adapter(RAGAS).source_format == "ragas"
+
+
+# ---------------------------------------------------------------------------
+# Langfuse score export (one model/run per file — paired via two files)
+# ---------------------------------------------------------------------------
+
+from evaltrust.adapters.langfuse import LangfuseAdapter
+
+LANGFUSE_V3 = _load(_TESTS_DIR / "fixtures" / "langfuse_scores_v3.json")
+
+
+def test_langfuse_detects_and_parses_the_v3_api_fixture():
+    a = LangfuseAdapter()
+    assert a.detect(LANGFUSE_V3)
+
+    suite = a.parse_suite(LANGFUSE_V3)
+    assert list(suite) == ["correctness", "helpfulness", "quality_label"]
+    assert [ex.id for ex in suite["correctness"].examples] == ["trace-1", "trace-2"]
+    assert [ex.scores["model"] for ex in suite["correctness"].examples] == [0.9, 0.2]
+    assert [ex.scores["model"] for ex in suite["helpfulness"].examples] == [1.0, 0.0]
+    assert [ex.scores["model"] for ex in suite["quality_label"].examples] == [1.0, 0.0]
+    assert suite["correctness"].metadata["skipped_rows"] == 1  # TEXT score
+
+
+def test_langfuse_single_audit_path_uses_the_first_metric():
+    data = LangfuseAdapter().parse(LANGFUSE_V3)
+    assert data.source_format == "langfuse"
+    assert [ex.scores["model"] for ex in data.examples] == [0.9, 0.2]
+
+
+def test_langfuse_accepts_legacy_flat_v2_score_rows():
+    raw = [
+        {"id": "s1", "traceId": "t1", "observationId": None,
+         "name": "correctness", "value": 1.0, "dataType": "NUMERIC"},
+        {"id": "s2", "traceId": "t2", "observationId": None,
+         "name": "correctness", "value": None, "stringValue": "incorrect",
+         "dataType": "CATEGORICAL"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t1", "t2"]
+    assert [ex.scores["model"] for ex in data.examples] == [1.0, 0.0]
+
+
+def test_langfuse_v3_without_subject_has_a_helpful_error():
+    raw = {"data": [{
+        "id": "s1", "projectId": "p1", "name": "correctness",
+        "value": 0.9, "dataType": "NUMERIC", "source": "EVAL",
+    }], "meta": {"limit": 50}}
+    a = LangfuseAdapter()
+    assert a.detect(raw)
+    with pytest.raises(ValueError, match="fields=subject"):
+        a.parse(raw)
+
+
+def test_langfuse_skips_and_counts_unusable_score_rows():
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "correctness",
+         "value": 1.0, "dataType": "NUMERIC"},
+        {"id": "s2", "traceId": "t2", "name": "correctness",
+         "value": "not-a-score", "dataType": "CATEGORICAL"},
+        {"id": "s3", "traceId": None, "name": "correctness",
+         "value": 0.5, "dataType": "NUMERIC"},
+        {"id": "s4", "traceId": "t4", "name": "notes",
+         "value": "review text", "dataType": "TEXT"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert data.n_examples == 1
+    assert data.metadata["skipped_rows"] == 3
+
+
+def test_langfuse_end_to_end_auto_detection_and_suite_ingest():
+    from evaltrust.core.ingest import load_suite
+
+    path = _TESTS_DIR / "fixtures" / "langfuse_scores_v3.json"
+    suite = load_suite(str(path))
+    assert list(suite) == ["correctness", "helpfulness", "quality_label"]
+    assert all(data.source_format == "langfuse" for data in suite.values())
+
+
+def test_langfuse_does_not_false_positive_on_other_fixtures():
+    a = LangfuseAdapter()
+    for other in (PROMPTFOO, NATIVE, LONG, WIDE, DEEPEVAL_SNAKE,
+                  DEEPEVAL_CAMEL, OPENEVALS_SAMPLE, INSPECT, LANGSMITH, RAGAS):
+        assert not a.detect(other), other
+
+    files = list((_TESTS_DIR / "fixtures").glob("*.json")) + \
+        list((_REPO_ROOT / "examples").glob("*.json"))
+    for f in files:
+        detected = a.detect(_load(f))
+        if f.name == "langfuse_scores_v3.json":
+            assert detected, f.name
+        else:
+            assert not detected, f.name
+
+
+def test_detect_routes_langfuse_before_generic_fallback():
+    assert detect_adapter(LANGFUSE_V3).source_format == "langfuse"
+    assert GenericRecordsAdapter().detect(LANGFUSE_V3)
+
+
+# ---------------------------------------------------------------------------
+# CATEGORICAL: v2 and v3 disagree on where the label lives.
+#
+# v2 (legacy flat traceId/sessionId/observationId rows): `value` is a number
+# that is only meaningful when `configId` links it to a score config - the
+# schema says it "defaults to 0" otherwise - and `stringValue` always carries
+# the human-readable label.
+#
+# v3 (`projectId`/`subject`-shaped rows): `value` IS the category string.
+# There is no `stringValue` field in v3 at all, and `configId` (only present
+# when `fields=details` was requested) is provenance, not a signal to treat
+# `value` as a number.
+# ---------------------------------------------------------------------------
+
+def test_langfuse_v2_categorical_with_config_id_uses_the_numeric_value():
+    # A configId means a score config maps the category to a number - trust it,
+    # even though a (possibly stale/unrelated) stringValue is also present.
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "quality", "dataType": "CATEGORICAL",
+         "configId": "cfg-1", "value": 0.75, "stringValue": "somewhat correct"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert data.examples[0].scores["model"] == 0.75
+
+
+def test_langfuse_v2_categorical_without_config_id_uses_string_value():
+    # No configId: the numeric `value` defaults to 0 per the Langfuse schema and
+    # isn't trustworthy, so the human-readable stringValue is used instead -
+    # even when `value` is set to something else.
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "quality", "dataType": "CATEGORICAL",
+         "value": 99, "stringValue": "correct"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert data.examples[0].scores["model"] == 1.0
+
+
+def test_langfuse_v2_categorical_without_config_id_skips_ambiguous_string_value():
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "quality", "dataType": "CATEGORICAL",
+         "value": None, "stringValue": "somewhat correct"},
+        {"id": "s2", "traceId": "t2", "name": "quality", "dataType": "CATEGORICAL",
+         "value": None, "stringValue": "correct"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t2"]
+    assert data.metadata["skipped_rows"] == 1
+
+
+def test_langfuse_v3_categorical_without_config_id_coerces_the_string_value_field():
+    # The common case: `fields=subject` only, no `details`, so configId is
+    # absent entirely. v3's `value` is still the category string directly.
+    raw = [{
+        "id": "s1", "projectId": "p1", "name": "quality", "value": "correct",
+        "dataType": "CATEGORICAL", "source": "ANNOTATION",
+        "subject": {"kind": "trace", "id": "t1"},
+    }]
+    data = LangfuseAdapter().parse(raw)
+    assert data.examples[0].scores["model"] == 1.0
+
+
+def test_langfuse_v3_categorical_with_config_id_still_reads_value_as_a_string():
+    # Even when `fields=details` surfaces a configId, v3 never turns `value`
+    # into a number - unlike v2, there is no numeric-mapping behavior to trust.
+    raw = [{
+        "id": "s1", "projectId": "p1", "name": "quality", "value": "incorrect",
+        "dataType": "CATEGORICAL", "source": "ANNOTATION", "configId": "cfg-1",
+        "subject": {"kind": "trace", "id": "t1"},
+    }]
+    data = LangfuseAdapter().parse(raw)
+    assert data.examples[0].scores["model"] == 0.0
+
+
+def test_langfuse_v3_categorical_skips_ambiguous_value():
+    raw = [
+        {"id": "s1", "projectId": "p1", "name": "quality",
+         "value": "somewhat correct", "dataType": "CATEGORICAL",
+         "source": "ANNOTATION", "subject": {"kind": "trace", "id": "t1"}},
+        {"id": "s2", "projectId": "p1", "name": "quality", "value": "correct",
+         "dataType": "CATEGORICAL", "source": "ANNOTATION",
+         "subject": {"kind": "trace", "id": "t2"}},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t2"]
+    assert data.metadata["skipped_rows"] == 1
+
+
+def test_langfuse_boolean_never_falls_back_to_string_value():
+    # v2 BOOLEAN always uses its numeric 0/1 value; a row with only a
+    # stringValue ("true"/"false") and no numeric value is skipped, not
+    # guessed at.
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "helpful", "dataType": "BOOLEAN",
+         "value": 1, "stringValue": "true"},
+        {"id": "s2", "traceId": "t2", "name": "helpful", "dataType": "BOOLEAN",
+         "value": None, "stringValue": "false"},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t1"]
+    assert data.metadata["skipped_rows"] == 1
+
+
+def test_langfuse_v3_boolean_reads_a_json_boolean_value():
+    # v3 BooleanScoreV3.value is a JSON boolean, not numeric 0/1.
+    raw = [
+        {"id": "s1", "projectId": "p1", "name": "helpful", "value": True,
+         "dataType": "BOOLEAN", "source": "ANNOTATION",
+         "subject": {"kind": "trace", "id": "t1"}},
+        {"id": "s2", "projectId": "p1", "name": "helpful", "value": False,
+         "dataType": "BOOLEAN", "source": "ANNOTATION",
+         "subject": {"kind": "trace", "id": "t2"}},
+    ]
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.scores["model"] for ex in data.examples] == [1.0, 0.0]
+
+
+# ---------------------------------------------------------------------------
+# Incomplete pagination must be rejected, not silently partially audited
+# ---------------------------------------------------------------------------
+
+def test_langfuse_v3_rejects_a_response_with_a_next_page_cursor():
+    raw = {
+        "data": [{"id": "s1", "name": "correctness", "value": 1.0,
+                  "dataType": "NUMERIC", "subject": {"kind": "trace", "id": "t1"}}],
+        "meta": {"cursor": "eyJpZCI6InMxIn0="},
+    }
+    a = LangfuseAdapter()
+    assert a.detect(raw)  # still recognised as Langfuse - the error must be specific
+    with pytest.raises(ValueError, match="page"):
+        a.parse(raw)
+
+
+def test_langfuse_v2_rejects_a_response_with_more_pages_remaining():
+    raw = {
+        "data": [{"id": "s1", "traceId": "t1", "name": "correctness",
+                  "value": 1.0, "dataType": "NUMERIC"}],
+        "meta": {"page": 1, "totalPages": 3},
+    }
+    with pytest.raises(ValueError, match="page"):
+        LangfuseAdapter().parse(raw)
+
+
+def test_langfuse_v2_rejects_the_last_page_of_a_multi_page_response():
+    # Being the *last* page does not mean this response's `data` array holds
+    # everything - page 2 of 2 only ever contains page 2's rows, not page 1's.
+    raw = {
+        "data": [{"id": "s1", "traceId": "t1", "name": "correctness",
+                  "value": 1.0, "dataType": "NUMERIC"}],
+        "meta": {"page": 2, "totalPages": 2},
+    }
+    with pytest.raises(ValueError, match="page"):
+        LangfuseAdapter().parse(raw)
+
+
+def test_langfuse_accepts_a_v2_response_wrapped_as_data_meta_when_it_is_the_only_page():
+    raw = {
+        "data": [{"id": "s1", "traceId": "t1", "name": "correctness",
+                  "value": 1.0, "dataType": "NUMERIC"}],
+        "meta": {"page": 1, "totalPages": 1},
+    }
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t1"]
+
+
+def test_langfuse_accepts_a_single_page_with_no_cursor_and_no_page_fields():
+    raw = {
+        "data": [{"id": "s1", "traceId": "t1", "name": "correctness",
+                  "value": 1.0, "dataType": "NUMERIC"}],
+        "meta": {"limit": 100},
+    }
+    data = LangfuseAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["t1"]
+
+
+# ---------------------------------------------------------------------------
+# Duplicate (trace, metric) observation scores must raise, not average
+# ---------------------------------------------------------------------------
+
+def test_langfuse_raises_on_duplicate_trace_metric_scores_instead_of_averaging():
+    raw = [
+        {"id": "s1", "name": "correctness", "value": 1.0, "dataType": "NUMERIC",
+         "subject": {"kind": "trace", "id": "t1"}},
+        {"id": "s2", "name": "correctness", "value": 0.0, "dataType": "NUMERIC",
+         "subject": {"kind": "observation", "id": "obs-1", "traceId": "t1"}},
+    ]
+    with pytest.raises(ValueError, match="aggregation policy"):
+        LangfuseAdapter().parse(raw)
+
+
+def test_langfuse_duplicate_check_does_not_trigger_across_different_metrics_or_traces():
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "correctness",
+         "value": 1.0, "dataType": "NUMERIC"},
+        {"id": "s2", "traceId": "t1", "name": "helpfulness",
+         "value": 0.0, "dataType": "NUMERIC"},
+        {"id": "s3", "traceId": "t2", "name": "correctness",
+         "value": 0.5, "dataType": "NUMERIC"},
+    ]
+    suite = LangfuseAdapter().parse_suite(raw)
+    assert list(suite) == ["correctness", "helpfulness"]
+    assert [ex.id for ex in suite["correctness"].examples] == ["t1", "t2"]
+
+
+# ---------------------------------------------------------------------------
+# Detection must not depend on a numeric `value` key being present
+# ---------------------------------------------------------------------------
+
+def test_langfuse_detects_a_v2_row_with_string_value_and_no_value_key():
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "notes",
+         "stringValue": "needs a citation", "dataType": "TEXT"},
+    ]
+    assert LangfuseAdapter().detect(raw)
+
+
+def test_langfuse_text_only_export_gives_an_unsupported_type_error_not_unknown_format():
+    raw = [
+        {"id": "s1", "traceId": "t1", "name": "notes",
+         "stringValue": "needs a citation", "dataType": "TEXT"},
+        {"id": "s2", "traceId": "t2", "name": "notes",
+         "stringValue": "looks good", "dataType": "TEXT"},
+    ]
+    # Detection must succeed so registry routing reaches this adapter's specific
+    # error, instead of falling through to UnknownFormatError.
+    assert detect_adapter(raw).source_format == "langfuse"
+    with pytest.raises(ValueError, match="TEXT and CORRECTION"):
+        LangfuseAdapter().parse(raw)
+
+
+# ---------------------------------------------------------------------------
+# Distinguishable errors: missing subject vs unsupported subject vs unsupported
+# type vs duplicate scores vs incomplete pagination
+# ---------------------------------------------------------------------------
+
+def test_langfuse_session_and_experiment_subjects_get_a_specific_error():
+    raw = [
+        {"id": "s1", "name": "correctness", "value": 1.0, "dataType": "NUMERIC",
+         "subject": {"kind": "session", "id": "sess-1"}},
+        {"id": "s2", "name": "correctness", "value": 1.0, "dataType": "NUMERIC",
+         "subject": {"kind": "experiment", "id": "exp-1"}},
+    ]
+    a = LangfuseAdapter()
+    assert a.detect(raw)
+    with pytest.raises(ValueError, match="session or experiment"):
+        a.parse(raw)
+
+
+def test_langfuse_missing_subject_error_is_distinct_from_unsupported_type_error():
+    missing_subject = [{
+        "id": "s1", "projectId": "p1", "name": "correctness",
+        "value": 0.9, "dataType": "NUMERIC", "source": "EVAL",
+    }]
+    unsupported_type = [
+        {"id": "s1", "traceId": "t1", "name": "notes",
+         "stringValue": "x", "dataType": "TEXT"},
+    ]
+    with pytest.raises(ValueError, match="fields=subject") as missing_exc:
+        LangfuseAdapter().parse(missing_subject)
+    with pytest.raises(ValueError, match="TEXT and CORRECTION") as type_exc:
+        LangfuseAdapter().parse(unsupported_type)
+    assert "fields=subject" not in str(type_exc.value)
+    assert "TEXT and CORRECTION" not in str(missing_exc.value)

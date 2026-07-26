@@ -5,9 +5,68 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed-example predictive rerun statistics.** Added a deterministic
+  Welch-Satterthwaite normal-theory approximation for independent run streams
+  at an explicit future run count. Its model-specific probability estimates the
+  strict event `future B - A < 0`. Its `central_mass` range describes fitted
+  model mass, not calibrated coverage or a posterior probability of latent
+  superiority. The pure primitive keeps existing inference and audit output
+  unchanged (#130).
+- **Streaming ingestion for large JSONL and CSV files.** `core/ingest.py` no longer calls `Path.read_text()` for files above the 64 MiB threshold — the raw file string is never materialised. For the common long-format JSONL case (`model` + `score` columns), records are extracted row-by-row via `_stream_records_from_jsonl()` (measured peak ~0.21× file size on payload-heavy rows). CSV is consumed via `csv.DictReader` on an open file handle. Large `.json` files are also streamed when the optional `ijson` extra is installed (`pip install "evaltrust[streaming]"`); without it the file falls back to a full load with a logged warning. Records and `EvalData` remain O(n) in row count — this PR eliminates the full-file string, not the record list (fixes #80).
+- **Langfuse adapter.** Public Scores API exports are detected structurally and
+  mapped from trace IDs, score names, and typed values into metric suites. Both
+  current v3 responses (`data`/`meta` with `subject`) and legacy flat v2 score
+  rows are supported (including v2 wrapped in `data`/`meta`); unusable
+  text/correction scores are skipped and counted. A wrapped `data`/`meta`
+  response is only accepted as complete when its `meta` proves it is the only
+  page (v2: `page == 1` and `totalPages == 1`; v3: no `cursor`) - a page-2-of-2
+  response is rejected even though it's the *last* page, since its `data` still
+  only holds that one page's rows. More than one score sharing a
+  `(trace, metric)` pair raises rather than being averaged. Categorical scores
+  are read version-correctly: v3's `value` is the
+  category string itself, while legacy exports trust the numeric `value` only
+  when a `configId` is present and otherwise coerce the `stringValue` label.
+  Session/experiment-level scores get a specific unsupported-subject error.
+- **`EvalData.paired_run_differences()`** exposes per-example, per-run
+  differences (`score_B - score_A`, runs aligned by index) to the comparison
+  layer. Additive and unused for now; it is not an input to the fixed-example
+  predictive rerun primitive, which consumes A and B streams independently.
+  The default score-based path is unchanged.
+- **Governance & supply-chain artifacts.** The security policy now states
+  explicitly that EvalTrust makes no network calls and sends no telemetry, and
+  documents the (small) runtime dependency set. Added a CycloneDX SBOM: generate
+  one with `make sbom`, and a `SBOM` workflow attaches one to every published
+  release. Corrected the stale supported-versions table.
+
+## [0.7.0] — 2026-07-17
+- **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file
+  has three or more scored models, the audit reports an advisory bootstrap
+  rank-occupancy finding: which leaderboard positions hold under resampling of
+  examples or `group_id` clusters. Default output and the verdict stay unchanged.
+- **Judge reliability and calibration now run in single-model mode.** A
+  single-model audit whose file carries multiple judges (and/or a gold judge)
+  now reports inter-judge agreement and calibration-vs-gold instead of omitting
+  them. Consensus ("which model do judges prefer") stays comparison-only, since
+  there's no second model to agree on. Two-model output is unchanged.
+- **Cluster-aware CI sign orientation fix.** `cluster_groups(trailer, leader)` is now called for the main CI so the clustered interval has the same sign as `diffs = leader - trailer`. Previously `cluster_groups(leader, trailer)` returned `trailer - leader`, flipping the reported CI on clustered data.
+
+- **TOST CI uses unoriented cluster groups.** The TOST equivalence CI now calls `cluster_groups(model_a, model_b)` directly instead of reusing the leader/trailer-oriented `clusters`, so the signed gap matches `raw = differences(model_a, model_b)`.
+
+- **Regression test locking CI orientation.** `test_clustered_ci_same_sign_and_wider_than_unclustered` asserts that on clustered data where B outperforms A the clustered CI is positive (same sign as non-clustered) and wider (clustering inflates variance).
+
+- **Cluster-aware TOST equivalence interval.** The equivalence (TOST) CI now
+  routes through `bootstrap_ci_clustered` when a `group_id` is present, matching
+  the variance estimator used for the significance CI. Previously the TOST interval
+  used the independence-assuming `bootstrap_ci` even on clustered data, which could
+  declare equivalence over-optimistically.
 
 ### Added
 - **Benchmark contamination audit.** Added a new `contamination` CLI command to audit a benchmark dataset against a reference/training dataset for exact and near-match leaks.
+- **Optional Bayesian paired comparison.** `audit --bayesian` reports the posterior decisive-example win probability and a 95% credible interval without changing the default output or verdict.
+- **Optional all-pairs comparison (`--all-pairs`).** Single-file audits can test
+  every declared model pair, correct across the pairs with shared scores, and
+  report which distinctions are statistically separable. The default remains
+  the two strongest models.
 - **Friendly enum string representations.** `Status` and `VerdictLevel` now render their friendly values when converted with `str(...)`.
 - **Per-slice / subgroup comparison (`--slice-by`).** The audit can now break
   the two-model comparison down by an optional per-example attribute (category,
@@ -38,6 +97,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Line-format adapters.** JSONL ingest can detect specific row formats before
   falling through to the existing generic record path; lm-eval sample logs are
   the first supported format.
+- **OpenAI Evals adapter.** Read an `openai/evals` `.jsonl` log directly: the
+  model comes from `spec.completion_fns`, and each `match` event's `data.correct`
+  bool becomes that sample's score (metric `accuracy`). One model per run; compare
+  two runs. Model-graded events (a config-mapped `choice`/`score` rather than a
+  `correct` bool) are skipped and counted for now, pending a follow-up. Closes #85.
 - **Pairwise preference judgments:** audit judge-level A/B/tie votes with an exact sign test and seeded win-rate interval.
 
 - **Judge calibration thresholds are independently tunable.** A new

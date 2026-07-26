@@ -46,20 +46,32 @@ def _judge_names(data: EvalData) -> list[str]:
 
 
 def audit_judge_reliability(
-    data: EvalData, model_a: str, model_b: str, agreement_threshold: float = 0.8
+    data: EvalData, model_a: str, model_b: str | None = None,
+    agreement_threshold: float = 0.8,
 ) -> list[Finding]:
+    """Audit judge reliability for a model pair, or a single model.
+
+    With ``model_b`` set, reports consensus (which model each judge prefers) plus
+    inter-judge agreement. With ``model_b`` omitted (single-model mode) there is
+    no winner to agree on, so it reports only inter-judge agreement over the one
+    model's per-judge scores.
+    """
     if not data.has_judges:
         return [_skip("The results file contains no per-judge scores.")]
     judges = _judge_names(data)
     if len(judges) < 2:
         return [_skip("Only one judge is present in the results file.")]
 
-    consensus = _consensus(data, judges, model_a, model_b)
-    ratings = _rating_matrix(data, judges, model_a, model_b)
+    models = (model_a,) if model_b is None else (model_a, model_b)
+    findings: list[Finding] = []
+    if model_b is not None:
+        findings.append(_consensus(data, judges, model_a, model_b))
+    ratings = _rating_matrix(data, judges, models)
     if ratings is None:
-        return [consensus,
-                _skip("Judges did not score a common set of items.")]
-    return [consensus, _agreement(ratings, judges, agreement_threshold)]
+        findings.append(_skip("Judges did not score a common set of items."))
+        return findings
+    findings.append(_agreement(ratings, judges, agreement_threshold))
+    return findings
 
 
 def _consensus(data, judges, model_a, model_b) -> Finding:
@@ -136,13 +148,13 @@ def _consensus(data, judges, model_a, model_b) -> Finding:
     )
 
 
-def _rating_matrix(data, judges, model_a, model_b) -> np.ndarray | None:
+def _rating_matrix(data, judges, models) -> np.ndarray | None:
     """Rows = (example, model) items every judge scored; columns = judges."""
     rows = []
     for ex in data.examples:
         if not ex.judges:
             continue
-        for m in (model_a, model_b):
+        for m in models:
             if all(j in ex.judges and m in ex.judges[j] for j in judges):
                 rows.append([ex.judges[j][m] for j in judges])
     if not rows:

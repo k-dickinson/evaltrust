@@ -1,0 +1,39 @@
+name: SBOM
+
+# Generate a CycloneDX Software Bill of Materials and attach it to each release.
+# Runs on published releases; can also be triggered manually for testing.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the package into a clean environment
+        run: |
+          python -m venv /tmp/pkgenv
+          /tmp/pkgenv/bin/pip install --upgrade pip
+          /tmp/pkgenv/bin/pip install .
+      - name: Generate CycloneDX SBOM (runtime deps only)
+        run: |
+          python -m pip install cyclonedx-bom
+          python -m cyclonedx_py environment /tmp/pkgenv -o sbom.json
+      - name: Attach SBOM to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom.json --clobber
+      - name: Upload SBOM as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json

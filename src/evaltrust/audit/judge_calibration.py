@@ -61,7 +61,7 @@ def _spearman(judge_vals: list[float], ref_vals: list[float]) -> float | None:
 def audit_judge_calibration(
     data: EvalData,
     model_a: str,
-    model_b: str,
+    model_b: str | None = None,
     threshold: float = 0.8,
     reference_judge: str | None = None,
     *,
@@ -70,7 +70,8 @@ def audit_judge_calibration(
     """Return a calibration finding, or [] when there's nothing to calibrate.
 
     ``correlation_threshold`` is the Spearman floor; when unset, it falls back to
-    the binary agreement ``threshold`` for compatibility.
+    the binary agreement ``threshold`` for compatibility. With ``model_b`` omitted
+    (single-model mode) calibration is measured over the one model's judge scores.
     """
     if not data.has_judges:
         return []
@@ -83,14 +84,15 @@ def audit_judge_calibration(
     others = [j for j in judges if j != ref]
     if not others:                          # no AI judge to calibrate
         return []
-    if _use_exact_match(data, [ref, *others], (model_a, model_b)):
-        return _calibration_exact_match(data, model_a, model_b, threshold, ref, others)
+    models = (model_a,) if model_b is None else (model_a, model_b)
+    if _use_exact_match(data, [ref, *others], models):
+        return _calibration_exact_match(data, models, threshold, ref, others)
     rho_floor = threshold if correlation_threshold is None else correlation_threshold
-    return _calibration_correlation(data, model_a, model_b, rho_floor, ref, others)
+    return _calibration_correlation(data, models, rho_floor, ref, others)
 
 
 def _calibration_exact_match(
-    data: EvalData, model_a: str, model_b: str, threshold: float,
+    data: EvalData, models: tuple, threshold: float,
     ref: str, others: list[str],
 ) -> list[Finding]:
     """Exact-match agreement for binary (pass/fail) judge scores."""
@@ -103,7 +105,7 @@ def _calibration_exact_match(
             j_scores, ref_scores = ex.judges.get(j), ex.judges.get(ref)
             if not j_scores or not ref_scores:
                 continue
-            for m in (model_a, model_b):
+            for m in models:
                 if m in j_scores and m in ref_scores:
                     total += 1
                     matches += int(j_scores[m] == ref_scores[m])
@@ -142,7 +144,7 @@ def _calibration_exact_match(
 
 
 def _calibration_correlation(
-    data: EvalData, model_a: str, model_b: str, correlation_threshold: float,
+    data: EvalData, models: tuple, correlation_threshold: float,
     ref: str, others: list[str],
 ) -> list[Finding]:
     """Spearman rank correlation for continuous judge scores."""
@@ -157,7 +159,7 @@ def _calibration_correlation(
             j_scores, ref_scores = ex.judges.get(j), ex.judges.get(ref)
             if not j_scores or not ref_scores:
                 continue
-            for m in (model_a, model_b):
+            for m in models:
                 if m in j_scores and m in ref_scores:
                     judge_vals.append(j_scores[m])
                     ref_vals.append(ref_scores[m])

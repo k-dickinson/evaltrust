@@ -244,3 +244,19 @@ def test_continuous_no_comparable_models_returns_empty_like_main():
     # nothing to calibrate -> silent [], not a SKIP, matching main's behaviour.
     ex = [{"gold": {"A": 5, "B": 3}, "gpt": {"C": 4}} for _ in range(3)]
     assert audit_judge_calibration(make(ex), "A", "B") == []
+
+
+# --- single-model mode (#21) -------------------------------------------------
+
+def test_single_model_calibration_against_gold():
+    # One model, a gold judge and an AI judge that mostly agrees with it.
+    ex = [{"gold": {"A": float(i % 2)},
+           "gpt": {"A": float(i % 2) if i < 8 else float((i + 1) % 2)}}
+          for i in range(10)]
+    findings = audit_judge_calibration(make(ex), "A")   # single model
+    # Assert the calibration actually computed (not just a SKIP finding):
+    # gpt matches gold on 8 of 10 items -> 80% agreement against the reference.
+    [finding] = [f for f in findings
+                 if f.details.get("check") == "judge_calibration"]
+    assert finding.details["reference"] == "gold"
+    assert abs(finding.details["accuracies"]["gpt"] - 0.8) < 1e-12

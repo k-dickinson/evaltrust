@@ -139,3 +139,34 @@ def test_consensus_skips_when_only_one_judge_scored_both_models():
     assert "gpt" in consensus.how_detected
     assert "claude" in consensus.how_detected
     assert consensus.details["skipped_judges"] == ["claude"]
+
+
+# --- single-model mode (#21) -------------------------------------------------
+
+def test_single_model_reliability_reports_agreement_and_no_consensus():
+    # Two judges score one model across items. Inter-judge agreement is
+    # assessable; consensus (who wins A vs B) is comparison-only, so it's absent.
+    ex = [{"gpt": {"A": float(i % 2)}, "claude": {"A": float(i % 2)}}
+          for i in range(10)]
+    findings = audit_judge_reliability(make_data(ex), "A")   # model_b omitted
+    checks = {f.details.get("check") for f in findings}
+    assert "inter_judge_agreement" in checks
+    assert "judge_consensus" not in checks
+
+
+def test_single_model_reliability_skips_without_a_second_judge():
+    ex = [{"gpt": {"A": float(i % 2)}} for i in range(10)]
+    findings = audit_judge_reliability(make_data(ex), "A")
+    assert all(f.status is Status.SKIP for f in findings)
+
+
+def test_single_model_audit_runs_judge_checks_end_to_end():
+    from evaltrust.audit.runner import run_audit
+    exs = [Example(id=str(i), scores={"A": float(i % 2)},
+                   judges={"gpt": {"A": float(i % 2)},
+                           "claude": {"A": float(i % 2)}})
+           for i in range(20)]
+    data = EvalData(models=["A"], examples=exs, source_format="test", metadata={})
+    report = run_audit(data)   # one model -> single path
+    checks = {f.details.get("check") for f in report.findings}
+    assert "inter_judge_agreement" in checks

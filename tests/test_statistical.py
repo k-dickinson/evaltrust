@@ -293,3 +293,115 @@ def test_equivalence_ci_and_decision_prose_share_the_reported_alpha():
     assert dec.details["outcome"] == "equivalent"
     assert dec.details["alpha"] == 0.025
     assert "95%" in dec.how_detected      # round((1 - 2*0.025) * 100) == 95
+
+
+# ---------------------------------------------------------------------------
+# cluster-aware statistical audit (issue #83)
+# ---------------------------------------------------------------------------
+from evaltrust.core.schema import EvalData, Example
+from evaltrust.audit.statistical import audit_statistical_validity
+
+
+def _clustered_eval(n_clusters=10, cluster_size=5, effect=0.3):
+    import numpy as np
+    rng = np.random.default_rng(42)
+    examples = []
+    i = 0
+    for c in range(n_clusters):
+        for _ in range(cluster_size):
+            a = float(rng.normal(0.0, 0.5))
+            b = float(rng.normal(effect, 0.5))
+            examples.append(
+                Example(id=str(i), scores={"A": a, "B": b}, group_id=f"g{c}")
+            )
+            i += 1
+    return EvalData(models=["A", "B"], examples=examples, source_format="test")
+
+
+def _unclustered_eval(n=50, effect=0.3):
+    import numpy as np
+    rng = np.random.default_rng(42)
+    examples = []
+    for i in range(n):
+        a = float(rng.normal(0.0, 0.5))
+        b = float(rng.normal(effect, 0.5))
+        examples.append(Example(id=str(i), scores={"A": a, "B": b}))
+    return EvalData(models=["A", "B"], examples=examples, source_format="test")
+
+
+def test_clustered_audit_runs_without_error():
+    data = _clustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    assert len(findings) == 3
+
+
+def test_clustered_audit_uses_cluster_test_name():
+    data = _clustered_eval(effect=1.0)
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "cluster" in decision.how_detected.lower()
+
+
+def test_unclustered_audit_mentions_independence_assumption():
+    data = _unclustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "independent" in decision.how_detected.lower()
+
+
+def test_clustered_audit_decision_finding_has_test_key():
+    data = _clustered_eval()
+    findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
+    decision = next(f for f in findings if f.details.get("check") == "decision")
+    assert "test" in decision.details
+
+
+def test_clustered_ci_same_sign_and_wider_than_unclustered():
+    """Clustered CI must have same sign as non-clustered CI and be wider.
+
+    On clustered data where B outperforms A, the clustered CI must be
+    positive (leader-minus-trailer > 0), same sign as the non-clustered
+    CI on the same data, and wider (clustering inflates variance).
+    """
+    from evaltrust.core.schema import EvalData, Example
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    examples_clustered = []
+    examples_unclustered = []
+    i = 0
+    for c in range(10):
+        cluster_effect = 0.5 if c % 2 == 0 else -0.5
+        for _ in range(5):
+            a = float(rng.normal(0.0, 0.5))
+            b = a + 0.4 + cluster_effect + float(rng.normal(0.0, 0.05))
+            examples_clustered.append(
+                Example(id=str(i), scores={"A": a, "B": b}, group_id=f"g{c}")
+            )
+            examples_unclustered.append(
+                Example(id=str(i), scores={"A": a, "B": b})
+            )
+            i += 1
+
+    data_c = EvalData(models=["A", "B"], examples=examples_clustered, source_format="test")
+    data_u = EvalData(models=["A", "B"], examples=examples_unclustered, source_format="test")
+
+    findings_c = audit_statistical_validity(data_c, "A", "B", n_resamples=500, seed=0)
+    findings_u = audit_statistical_validity(data_u, "A", "B", n_resamples=500, seed=0)
+
+    dec_c = next(f for f in findings_c if f.details.get("check") == "decision")
+    dec_u = next(f for f in findings_u if f.details.get("check") == "decision")
+
+    lo_c, hi_c = dec_c.details["ci_low"], dec_c.details["ci_high"]
+    lo_u, hi_u = dec_u.details["ci_low"], dec_u.details["ci_high"]
+
+    # Same sign: both CIs should be positive (B > A)
+    assert lo_c > 0, f"Clustered CI lower bound should be positive, got {lo_c}"
+    assert lo_u > 0, f"Unclustered CI lower bound should be positive, got {lo_u}"
+
+    # Clustered interval must be wider than unclustered
+    width_c = hi_c - lo_c
+    width_u = hi_u - lo_u
+    assert width_c > width_u, (
+        f"Clustered CI width {width_c:.4f} should exceed unclustered {width_u:.4f}"
+    )

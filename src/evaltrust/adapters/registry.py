@@ -12,7 +12,9 @@ from typing import Protocol
 from ..core.schema import EvalData
 from .deepeval import DeepEvalAdapter
 from .generic import GenericRecordsAdapter, NativeNestedAdapter
+from .helm import HelmAdapter
 from .inspect_ai import InspectAdapter
+from .langfuse import LangfuseAdapter
 from .langsmith import LangSmithAdapter
 from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
@@ -38,8 +40,10 @@ REGISTRY: list[Adapter] = [
     DeepEvalAdapter(),
     OpenEvalsAdapter(),
     InspectAdapter(),
+    LangfuseAdapter(),
     LangSmithAdapter(),
     RagasAdapter(),
+    HelmAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]
@@ -51,7 +55,8 @@ def detect_adapter(raw) -> Adapter:
             return adapter
     raise UnknownFormatError(
         "Could not recognise this evaluation format. EvalTrust looked for "
-        "promptfoo results, a DeepEval test-results export, a nested "
-        "{\"examples\": [...]} structure, or a list of records with model/score "
-        "fields. Provide per-example scores in one of those shapes, or a CSV."
+        "promptfoo results, a DeepEval test-results export, Langfuse scores, "
+        "a HELM per_instance_stats.json, a nested {\"examples\": [...]} "
+        "structure, or a list of records with model/score fields. Provide "
+        "per-example scores in one of those shapes, or a CSV."
     )

@@ -62,6 +62,32 @@ def test_has_runs_true_only_when_any_example_has_runs():
     assert with_runs.has_runs is True
 
 
+def test_paired_run_differences_yields_per_example_run_diffs():
+    d = _data(examples=[
+        Example("q1", {"A": 0.5, "B": 0.6}, runs={"A": [0, 1], "B": [1, 1]}),
+        Example("q2", {"A": 0, "B": 1}),                       # no runs -> excluded
+        Example("q3", {"A": 1, "B": 0}, runs={"A": [1, 1, 1], "B": [0, 0]}),
+        Example("q4", {"A": 1, "B": 0}, runs={"A": [1, 1]}),   # runs for one model -> excluded
+    ])
+    groups = d.paired_run_differences("A", "B")
+    assert len(groups) == 2                     # q1 and q3 only
+    assert list(groups[0]) == [1.0, 0.0]        # [1,1] - [0,1]
+    assert list(groups[1]) == [-1.0, -1.0]      # aligned to len 2: [0,0] - [1,1]
+
+
+def test_paired_run_differences_single_run_yields_length_one_array():
+    # Graceful degradation: one run per model is a valid (size-1) cluster.
+    d = _data(examples=[Example("q1", {"A": 1, "B": 0}, runs={"A": [1], "B": [0]})])
+    groups = d.paired_run_differences("A", "B")
+    assert len(groups) == 1
+    assert list(groups[0]) == [-1.0]            # [0] - [1]
+
+
+def test_paired_run_differences_empty_without_runs():
+    d = _data(examples=[Example(str(i), {"A": 0, "B": 1}) for i in range(5)])
+    assert d.paired_run_differences("A", "B") == []
+
+
 def test_has_judges_true_only_when_any_example_has_judges():
     without = _data(examples=[Example("q1", {"A": 1, "B": 0})])
     with_judges = _data(examples=[
@@ -109,3 +135,75 @@ def test_to_dict_serializes_non_finite_floats_as_null(bad):
     # The whole payload must round-trip through a strict JSON parser.
     text = json.dumps(f.to_dict(), allow_nan=False)
     json.loads(text)
+
+
+# ---------------------------------------------------------------------------
+# cluster-aware schema helpers
+# ---------------------------------------------------------------------------
+from evaltrust.core.schema import EvalData, Example
+
+
+def _make_clustered_data():
+    return EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="1", scores={"A": 0.0, "B": 1.0}, group_id="g1"),
+            Example(id="2", scores={"A": 1.0, "B": 0.0}, group_id="g1"),
+            Example(id="3", scores={"A": 0.0, "B": 1.0}, group_id="g2"),
+            Example(id="4", scores={"A": 0.5, "B": 0.5}, group_id="g2"),
+        ],
+        source_format="test",
+    )
+
+
+def test_has_clusters_true_when_group_id_present():
+    data = _make_clustered_data()
+    assert data.has_clusters is True
+
+
+def test_has_clusters_false_when_no_group_id():
+    data = EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="1", scores={"A": 0.0, "B": 1.0}),
+            Example(id="2", scores={"A": 1.0, "B": 0.0}),
+        ],
+        source_format="test",
+    )
+    assert data.has_clusters is False
+
+
+def test_cluster_groups_returns_correct_number_of_clusters():
+    data = _make_clustered_data()
+    groups = data.cluster_groups("A", "B")
+    assert len(groups) == 2
+
+
+def test_cluster_groups_values_match_differences():
+    import numpy as np
+    data = _make_clustered_data()
+    groups = data.cluster_groups("A", "B")
+    all_diffs = np.concatenate(groups)
+    expected = data.differences("A", "B")
+    assert np.allclose(sorted(all_diffs), sorted(expected))
+
+
+def test_cluster_groups_singleton_without_group_id():
+    """Examples without group_id each form their own cluster."""
+    import numpy as np
+    data = EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id="x", scores={"A": 0.0, "B": 1.0}),
+            Example(id="y", scores={"A": 1.0, "B": 0.5}),
+        ],
+        source_format="test",
+    )
+    groups = data.cluster_groups("A", "B")
+    assert len(groups) == 2
+    assert all(len(g) == 1 for g in groups)
+
+
+def test_example_group_id_defaults_to_none():
+    ex = Example(id="z", scores={"A": 1.0})
+    assert ex.group_id is None

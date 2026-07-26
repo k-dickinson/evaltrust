@@ -124,7 +124,8 @@ pip install evaltrust
 ```
 
 Requires Python 3.10 or newer. That's the whole setup - no API keys, no config,
-no account.
+no account. It runs fully offline: **no network calls, no telemetry, no data
+leaves your machine** (see the [security policy](SECURITY.md)).
 
 <details>
 <summary>Install from source (for development)</summary>
@@ -178,6 +179,10 @@ Useful flags:
 | `--html <path>` | Write a self-contained HTML report (no dependencies) to a file. |
 | `--plain` | Plain ASCII output - safe for Windows terminals, CI logs, and piping to a file. |
 | `--explain` | Show why each flag matters and the numbers behind it. |
+| `--slice-by` | Break the comparison down by a per-example attribute (category, difficulty, language) and flag any subgroup that regresses. |
+| `--all-pairs` | With more than two models, compare every pair (not just the top two), corrected across the pairs. |
+| `--bayesian` | Add a Bayesian view: the probability one model wins more often, with a credible interval. |
+| `--correction` | Multi-metric correction: `bonferroni` (default), `holm`, or `none`. |
 | `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) - gate CI. |
 | `--threshold` | For a single-model eval, the target score to test against (e.g. `0.8`). |
 | `--reference-judge` | Name the human/gold judge to calibrate the AI judges against. |
@@ -235,6 +240,11 @@ report.raise_if_below("moderate")             # raises UntrustworthyError if too
 report.to_dict()          # machine-readable JSON: log it, store it, diff it
 ```
 
+Every JSON payload (`--json`, `to_dict()`, `diff --json`) carries a
+`schema_version` (the output shape) and a `methodology_version` (the audit methods
+and thresholds behind the verdict), also exposed as `evaltrust.SCHEMA_VERSION` /
+`evaltrust.METHODOLOGY_VERSION` - pin to these instead of guessing.
+
 In pytest, that makes "is my eval trustworthy?" a normal test:
 
 ```python
@@ -283,10 +293,19 @@ score.
 
 | Pillar | The question it answers |
 |--------|-------------------------|
-| **Statistical Validity** | Is the difference a real improvement, no real difference, or just too little data to tell? Significance (McNemar for pass/fail, paired permutation for continuous), equivalence testing, an interpretable effect size, and the minimum detectable effect. *(For a single model: a confidence interval on the score, and an optional target test.)* |
+| **Statistical Validity** | Is the difference a real improvement, no real difference, or just too little data to tell? Significance (McNemar for pass/fail, paired permutation for continuous), equivalence testing, an effect size with a confidence interval, and the minimum detectable effect. *(For a single model: a confidence interval on the score, and an optional target test.)* |
+| **Pairwise Preference** | When judges vote A-vs-B (or tie) instead of scoring each model, is the preference real? An exact sign test on the win/loss split, with a win-rate interval. |
+| **Per-slice Comparison** | *(opt-in `--slice-by`)* Does the result hold within each subgroup (category, difficulty, language), or does a slice quietly regress? Corrected across the slices. |
+| **All-pairs Comparison** | *(opt-in `--all-pairs`)* With more than two models, which pairs are actually distinguishable - corrected across the whole set - and is the ranking stable? |
 | **Benchmark Health** | Can the benchmark even separate these models, or is it saturated / flat? |
 | **Repeatability** | If you reran the evaluation, would the winner stay the winner? Uses repeated-run data when the file contains it. |
-| **Judge Reliability** | Would a different judge reach the same verdict - and does the AI judge match human labels? Uses multi-judge and human/gold data when the file contains it. |
+| **Judge Reliability** | Would a different judge reach the same verdict - and does the AI judge match human labels? Works for a comparison or a single model, using multi-judge and human/gold data when the file contains it. |
+
+Correlated examples (repeated judgments, task/template groups)? Add a `group_id`
+per example and the significance test and intervals resample whole clusters, so
+they reflect that correlation instead of assuming independence. Add `--bayesian`
+for a Bayesian view (the probability one model wins more often, with a credible
+interval); it's advisory and never changes the verdict.
 
 Every finding follows the same rule - **why it matters**, **how we detected it**,
 and **how to fix it**. Checks that need extra data (repeated runs, multiple
@@ -312,8 +331,13 @@ produced and auto-detects the shape. First-class adapters today:
 
 - **Promptfoo** results (several providers compared across test cases)
 - **DeepEval** test-results export (one model per run - pass two files to compare)
+- **Inspect** (UK AISI) `.json` eval log (one model per log - pass two to compare)
+- **OpenEvals** results list (one model per run - pass two files to compare)
+- **Langfuse** Scores API export (one model per export - pass two files to compare)
 - **LangSmith** run export (one experiment per run - pass two files to compare)
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
+- **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)
+- **lm-eval** (`lm-evaluation-harness`) sample logs (`.jsonl`)
 - **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`
 - **Record lists** - JSON like `[{"id", "model", "score"}, ...]`
 - **CSV** - long (`id,model,score`) or wide (`id,gpt,claude`)

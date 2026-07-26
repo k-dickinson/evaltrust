@@ -12,6 +12,7 @@ from typing import Protocol
 
 from .common import Record
 from .lm_eval import LMEvalAdapter
+from .openai_evals import OpenAIEvalsAdapter
 
 
 class LineAdapter(Protocol):
@@ -27,6 +28,7 @@ class LineAdapter(Protocol):
 # entry. Unclaimed rows keep using ingest's existing dicts_to_records path.
 LINE_REGISTRY: list[LineAdapter] = [
     LMEvalAdapter(),
+    OpenAIEvalsAdapter(),
 ]
 
 

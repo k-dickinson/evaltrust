@@ -259,6 +259,30 @@ def test_preference_only_auto_selection_requires_an_unambiguous_pair():
         run_audit(ambiguous, config=FAST_CONFIG)
 
 
+def test_all_pairs_skips_preference_only_data_with_explicit_primary_pair():
+    data = _data([{"judge": "A"} for _ in range(8)], models=("A", "B", "C"))
+    report = run_audit(
+        data,
+        model_a="A",
+        model_b="B",
+        config=AuditConfig(all_pairs=True, n_resamples=50, seed=7),
+    )
+    finding = _finding(report.findings, "all_pairs")
+
+    assert finding.status is Status.SKIP
+    assert finding.details["assessed"] is False
+    assert finding.details["reason"] == "preference_only"
+
+
+def test_all_pairs_does_not_bypass_ambiguous_preference_model_selection():
+    data = _data([{"judge": "A"}], models=("A", "B", "C"))
+    with pytest.raises(ValueError, match="name the two models"):
+        run_audit(
+            data,
+            config=AuditConfig(all_pairs=True, n_resamples=50, seed=7),
+        )
+
+
 def test_preference_only_input_is_not_dispatched_as_a_single_model_audit():
     data = _data([{"judge": "A"}], models=("A",))
     with pytest.raises(ValueError, match="two models"):

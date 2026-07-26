@@ -9,6 +9,9 @@ import numpy as np
 from ..config import AuditConfig
 from ..core.schema import EvalData, Finding, Status
 from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
+from .allpairs import audit_all_pairs
+from .bayesian import audit_bayesian_win_probability
+from .rank_stability import audit_rank_stability
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
 from .judge_reliability import audit_judge_reliability
@@ -214,6 +217,13 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
             "preference_only" if preference_only else "no_paired_scores",
         ))
 
+    if cfg.bayesian:
+        findings += audit_bayesian_win_probability(data, model_a, model_b)
+
+    if cfg.all_pairs:
+        findings += audit_all_pairs(data, cfg)
+        findings += audit_rank_stability(data, cfg)
+
     if has_pair_scores:
         findings += audit_benchmark_health(
             data, [model_a, model_b],
@@ -317,6 +327,17 @@ def _single(data, model, threshold, cfg) -> AuditReport:
     if dq is not None:
         findings.append(dq)
     findings += audit_single(data, model, threshold=threshold, config=cfg)
+
+    # The judge checks are about the judges, not the pair, so they run for a
+    # single model too (inter-judge agreement + calibration against a gold judge).
+    if data.has_judges:
+        findings += audit_judge_reliability(
+            data, model, agreement_threshold=cfg.judge_agreement_threshold)
+        findings += audit_judge_calibration(
+            data, model,
+            threshold=cfg.judge_agreement_threshold,
+            correlation_threshold=cfg.judge_correlation_threshold,
+            reference_judge=cfg.reference_judge)
 
     return AuditReport(
         model_a=model, model_b=None, n_examples=data.n_examples,

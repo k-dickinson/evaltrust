@@ -405,3 +405,79 @@ def test_large_n_permutation_completes_within_bounded_memory():
     diffs = np.random.default_rng(1).normal(0.0, 1.0, size=n)
     p = permutation_test(diffs, n_resamples=3000, seed=0)
     assert 0.0 <= p <= 1.0
+
+# ---------------------------------------------------------------------------
+# cluster-aware resampling
+# ---------------------------------------------------------------------------
+from evaltrust.stats.resampling import (
+    bootstrap_ci_clustered,
+    permutation_test_clustered,
+)
+
+
+def test_bootstrap_ci_clustered_all_zero_is_zero():
+    clusters = [np.zeros(5) for _ in range(10)]
+    lo, hi = bootstrap_ci_clustered(clusters, confidence=0.95, n_resamples=2000, seed=0)
+    assert lo == pytest.approx(0.0)
+    assert hi == pytest.approx(0.0)
+
+
+def test_bootstrap_ci_clustered_constant_collapses():
+    clusters = [np.full(4, 2.0) for _ in range(8)]
+    lo, hi = bootstrap_ci_clustered(clusters, confidence=0.95, n_resamples=2000, seed=0)
+    assert lo == pytest.approx(2.0)
+    assert hi == pytest.approx(2.0)
+
+
+def test_bootstrap_ci_clustered_brackets_mean():
+    rng = np.random.default_rng(42)
+    clusters = [rng.normal(0.3, 0.5, size=10) for _ in range(20)]
+    all_diffs = np.concatenate(clusters)
+    lo, hi = bootstrap_ci_clustered(clusters, confidence=0.95, n_resamples=5000, seed=0)
+    assert lo < all_diffs.mean() < hi
+
+
+def test_bootstrap_ci_clustered_excludes_zero_for_clear_signal():
+    rng = np.random.default_rng(7)
+    clusters = [rng.normal(1.0, 0.2, size=5) for _ in range(30)]
+    lo, _hi = bootstrap_ci_clustered(clusters, confidence=0.95, n_resamples=5000, seed=0)
+    assert lo > 0.0
+
+
+def test_bootstrap_ci_clustered_wider_than_unclustered():
+    """Cluster CI must be at least as wide as the row-level CI when there is
+    meaningful between-cluster variance (different cluster means)."""
+    rng = np.random.default_rng(99)
+    # 10 clusters, each with a different mean — lots of between-cluster variance.
+    clusters = [np.full(10, float(i)) for i in range(10)]
+    all_diffs = np.concatenate(clusters)
+    lo_c, hi_c = bootstrap_ci_clustered(clusters, confidence=0.95, n_resamples=5000, seed=0)
+    lo_r, hi_r = bootstrap_ci(all_diffs, confidence=0.95, n_resamples=5000, seed=0)
+    assert (hi_c - lo_c) >= (hi_r - lo_r)
+
+
+def test_permutation_test_clustered_null_is_not_significant():
+    rng = np.random.default_rng(0)
+    clusters = [rng.normal(0.0, 1.0, size=5) for _ in range(20)]
+    p = permutation_test_clustered(clusters, n_resamples=5000, seed=0)
+    assert p > 0.05
+
+
+def test_permutation_test_clustered_strong_signal_is_significant():
+    clusters = [np.full(5, 1.0) for _ in range(20)]
+    p = permutation_test_clustered(clusters, n_resamples=5000, seed=0)
+    assert p < 0.01
+
+
+def test_permutation_test_clustered_pvalue_in_range():
+    rng = np.random.default_rng(3)
+    clusters = [rng.normal(0.2, 0.5, size=8) for _ in range(15)]
+    p = permutation_test_clustered(clusters, n_resamples=2000, seed=0)
+    assert 0.0 < p <= 1.0
+
+
+def test_permutation_test_clustered_never_zero():
+    """The (count+1)/(N+1) correction guarantees p > 0."""
+    clusters = [np.full(10, 100.0) for _ in range(5)]
+    p = permutation_test_clustered(clusters, n_resamples=1000, seed=0)
+    assert p > 0.0

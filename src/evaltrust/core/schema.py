@@ -39,9 +39,14 @@ class Example:
 
     ``scores`` maps model -> final score. The optional fields carry the extra
     evidence that unlocks more checks:
-      - ``runs``:   model -> list of scores from repeated evaluations.
-      - ``judges``: judge -> {model -> score} when several judges scored the item.
+      - ``runs``:     model -> list of scores from repeated evaluations.
+      - ``judges``:   judge -> {model -> score} when several judges scored the item.
       - ``preferences``: judge -> winning model id, or ``Preference.TIE``.
+      - ``group_id``: optional cluster / group label. When present, resampling
+                      draws whole clusters instead of individual rows so that
+                      within-cluster correlation is preserved. Examples without a
+                      ``group_id`` are treated as independent (the standard
+                      assumption).
       - ``attributes``: free-form tags for slicing (e.g. category, difficulty,
         language). Values are stored as strings.
     """
@@ -52,6 +57,7 @@ class Example:
     judges: dict[str, dict[str, float]] | None = None
     preferences: dict[str, str | Preference] | None = None
     attributes: dict[str, str] | None = None
+    group_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +104,66 @@ class EvalData:
         """Paired differences ``score_B - score_A`` over shared examples."""
         a, b = self.paired_scores(model_a, model_b)
         return b - a
+
+    def paired_run_differences(
+        self, model_a: str, model_b: str
+    ) -> list[np.ndarray]:
+        """Per-example arrays of per-run differences ``score_B - score_A``.
+
+        For each example that carries repeated ``runs`` for *both* models, the
+        runs are aligned by index and returned as one array of per-run
+        differences. Examples without runs for both models are omitted.
+
+        When the two models have unequal run counts for an example, the longer
+        list is silently truncated to the length of the shorter one (extra runs
+        are dropped), mirroring how the Repeatability pillar consumes runs. A
+        single run per model degrades gracefully: ``{"A": [1], "B": [0]}`` yields
+        one length-1 array ``[-1.0]``.
+
+        This exposes the raw run-to-run variance to the comparison layer so a
+        run-aware estimator can treat each example's runs as a cluster; the
+        default score-based path (``paired_scores`` / ``differences``) is
+        unchanged and nothing consumes this yet.
+        """
+        out: list[np.ndarray] = []
+        for ex in self.examples:
+            if not ex.runs:
+                continue
+            a_runs = ex.runs.get(model_a)
+            b_runs = ex.runs.get(model_b)
+            if not a_runs or not b_runs:
+                continue
+            r = min(len(a_runs), len(b_runs))
+            if r == 0:
+                continue
+            a = np.array(a_runs[:r], dtype=float)
+            b = np.array(b_runs[:r], dtype=float)
+            out.append(b - a)
+        return out
+
+    @property
+    def has_clusters(self) -> bool:
+        """True when at least one example carries a ``group_id``."""
+        return any(ex.group_id is not None for ex in self.examples)
+
+    def cluster_groups(
+        self, model_a: str, model_b: str
+    ) -> list[np.ndarray]:
+        """Per-cluster arrays of paired differences (score_B - score_A).
+
+        Only examples that have scores for *both* models are included.
+        Clusters are returned in sorted order so the output is deterministic.
+        Examples without a ``group_id`` each form their own singleton cluster,
+        preserving the independent-rows behaviour as a special case.
+        """
+        from collections import defaultdict
+
+        buckets: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for ex in self.examples:
+            if model_a in ex.scores and model_b in ex.scores:
+                key = ("g", ex.group_id) if ex.group_id is not None else ("i", ex.id)
+                buckets[key].append(ex.scores[model_b] - ex.scores[model_a])
+        return [np.array(v, dtype=float) for _, v in sorted(buckets.items())]
 
 
 @dataclass(frozen=True)

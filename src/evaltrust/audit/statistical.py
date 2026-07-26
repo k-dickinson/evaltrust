@@ -18,7 +18,13 @@ from ..stats.effect import (
 )
 from ..stats.paired import mcnemar_exact
 from ..stats.power import minimum_detectable_effect, required_n
-from ..stats.resampling import bootstrap_ci, bootstrap_statistic_ci, permutation_test
+from ..stats.resampling import (
+    bootstrap_ci,
+    bootstrap_ci_clustered,
+    bootstrap_statistic_ci,
+    permutation_test,
+    permutation_test_clustered,
+)
 
 PILLAR = "Statistical Validity"
 
@@ -53,6 +59,19 @@ def audit_statistical_validity(
         leader, trailer, diffs = model_a, model_b, -raw
 
     binary = _is_binary(data, model_a, model_b)
+    clustered = data.has_clusters
+    cluster_note = (
+        " (examples treated as independent — supply a group_id per example "
+        "to enable cluster-aware resampling)"
+        if not clustered
+        else ""
+    )
+    binary_cluster_note = (
+        " (McNemar's test does not yet use cluster-aware resampling; "
+        "examples are treated as independent for this test)"
+        if clustered
+        else cluster_note
+    )
 
     # --- significance ---
     if binary:
@@ -60,22 +79,45 @@ def audit_statistical_validity(
         p = mcnemar_exact(b_only, a_only)
         test_name = "McNemar's exact test"
         test_detail = (f"{b_only + a_only} discordant pairs "
-                       f"({b_only} for {leader}, {a_only} for {trailer})")
+                       f"({b_only} for {leader}, {a_only} for {trailer})"
+                       + binary_cluster_note)
+    elif clustered:
+        clusters = data.cluster_groups(leader, trailer)
+        p = permutation_test_clustered(clusters, n_resamples=n_resamples, seed=seed)
+        k = len(clusters)
+        test_name = "a cluster-aware paired permutation test"
+        test_detail = f"{n} paired examples across {k} clusters"
     else:
         p = permutation_test(diffs, n_resamples=n_resamples, seed=seed)
         test_name = "a paired permutation test"
-        test_detail = f"{n} paired examples"
+        test_detail = f"{n} paired examples{cluster_note}"
     # Strict `p < alpha` unless a multiplicity procedure supplied the decision.
     if significant is None:
         significant = p < alpha
 
     # --- confidence interval (leader-minus-trailer) ---
-    lo, hi = bootstrap_ci(diffs, confidence=confidence,
-                          n_resamples=n_resamples, seed=seed)
+    if clustered and not binary:
+        clusters = data.cluster_groups(trailer, leader)
+        lo, hi = bootstrap_ci_clustered(
+            clusters, confidence=confidence, n_resamples=n_resamples, seed=seed
+        )
+    else:
+        lo, hi = bootstrap_ci(diffs, confidence=confidence,
+                              n_resamples=n_resamples, seed=seed)
 
     # --- equivalence (TOST): (1 - 2*alpha) CI on the signed gap inside the margin ---
-    eq_lo, eq_hi = bootstrap_ci(raw, confidence=1 - 2 * alpha,
-                                n_resamples=n_resamples, seed=seed)
+    # Route through bootstrap_ci_clustered when clusters are present so the
+    # "statistically equivalent" verdict uses the same variance estimator as
+    # the significance CI — plain bootstrap_ci would assume independence and
+    # produce an interval that is too narrow on clustered data (TOST over-optimism).
+    if clustered and not binary:
+        tost_clusters = data.cluster_groups(model_a, model_b)
+        eq_lo, eq_hi = bootstrap_ci_clustered(
+            tost_clusters, confidence=1 - 2 * alpha, n_resamples=n_resamples, seed=seed
+        )
+    else:
+        eq_lo, eq_hi = bootstrap_ci(raw, confidence=1 - 2 * alpha,
+                                    n_resamples=n_resamples, seed=seed)
     equivalent = eq_lo > -equivalence_margin and eq_hi < equivalence_margin
 
     if significant:
@@ -135,14 +177,16 @@ def _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
         status = Status.WARN
         how = (f"The gap was not significant (p = {p:.4f}) and the "
                f"{round((1 - 2 * alpha) * 100)}% interval falls within "
-               f"+/-{margin}, so any real difference is smaller than that margin.")
+               f"+/-{margin}, so any real difference is smaller than that margin. "
+               f"{test_detail}.")
         fix = "Treat them as equal on quality. Decide on cost or speed."
     else:  # inconclusive
         title = f"Improvement of {leader} over {trailer} is inconclusive"
         status = Status.FAIL
         how = (f"{cap} gave p = {p:.4f} (not significant), and "
                f"the interval {ci} is too wide to rule out a real difference. "
-               "That's missing data, not proof the two are equal.")
+               f"That's missing data, not proof the two are equal. "
+               f"{test_detail}.")
         fix = "Don't call a winner yet. Collect more examples first."
 
     return Finding(
