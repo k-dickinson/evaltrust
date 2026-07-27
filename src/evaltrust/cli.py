@@ -359,6 +359,11 @@ def contamination(
 
     result = run_contamination_audit(bench_texts, ref_texts)
 
+    # Validate --fail-over range.
+    if fail_over is not None and not (0.0 <= fail_over <= 1.0):
+        _err.print(f"[red]--fail-over must be between 0 and 1 (got {fail_over})[/red]")
+        raise typer.Exit(code=2)
+
     # Determine the effective fail threshold (default 15 %).
     threshold_frac = fail_over if fail_over is not None else 0.15
 

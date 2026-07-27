@@ -189,3 +189,13 @@ def test_contamination_all_rows_missing_column_exits_2(tmp_path):
 
     result = _runner.invoke(app, ["contamination", bench, ref])
     assert result.exit_code == 2
+
+
+def test_contamination_fail_over_out_of_range(tmp_path):
+    """--fail-over values outside [0, 1] must exit 2 (validation error)."""
+    bench = _write(tmp_path, "bench.jsonl", '{"prompt": "x"}\n')
+    ref = _write(tmp_path, "ref.jsonl", '{"prompt": "x"}\n')
+
+    for bad_value in ("1.5", "-0.1", "2"):
+        result = _runner.invoke(app, ["contamination", bench, ref, "--fail-over", bad_value])
+        assert result.exit_code == 2, f"Expected exit 2 for --fail-over {bad_value}, got {result.exit_code}"
