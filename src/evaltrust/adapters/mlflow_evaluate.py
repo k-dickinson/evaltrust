@@ -18,7 +18,7 @@ import re
 from collections import OrderedDict
 
 from ..core.schema import EvalData
-from .common import Record, coerce_score, records_to_suite
+from .common import Record, coerce_score, records_to_evaldata
 
 _SCORE_COL = re.compile(r"^(?P<metric>.+)/score$")
 _BARE_METRIC_COLS = {"token_count", "latency"}
@@ -80,27 +80,42 @@ class MlflowEvaluateAdapter:
             raise ValueError("No MLflow-style metric score columns found")
 
         model = "model"
-        records: list[Record] = []
-        skipped = 0
+        records: "OrderedDict[str, list[Record]]" = OrderedDict(
+            (metric, []) for metric in metric_cols
+        )
+        skipped: dict[str, int] = {metric: 0 for metric in metric_cols}
         for idx, row in enumerate(rows):
             for metric, col in metric_cols.items():
                 if col not in row:
-                    skipped += 1
+                    skipped[metric] += 1
                     continue
                 try:
                     score = coerce_score(row[col])
                 except ValueError:
-                    skipped += 1
+                    skipped[metric] += 1
                     continue
-                records.append(Record(str(idx), model, score, metric=metric))
+                records[metric].append(Record(str(idx), model, score, metric=metric))
 
-        if not records:
+        # Per-metric datasets with per-metric skip counts: a bad cell in one
+        # column must not inflate another metric's Data Quality finding.
+        suite = OrderedDict(
+            (metric, records_to_evaldata(recs, self.source_format,
+                                         {"skipped_rows": skipped[metric]}))
+            for metric, recs in records.items() if recs
+        )
+        if not suite:
             raise ValueError("No usable MLflow evaluate metric scores found")
-        return records_to_suite(records, self.source_format, {"skipped_rows": skipped})
+        return suite
 
     def parse(self, raw) -> EvalData:
-        # Single-audit path: first metric column (by column order) is audited.
-        return next(iter(self._to_suite(raw).values()))
+        # Single-audit path: the first quality metric column (<metric>/score, by
+        # column order) that yielded usable scores. Bare operational columns
+        # (token_count, latency) are audited only when no quality metric is.
+        suite = self._to_suite(raw)
+        for metric in suite:
+            if metric not in _BARE_METRIC_COLS:
+                return suite[metric]
+        return next(iter(suite.values()))
 
     def parse_suite(self, raw) -> "OrderedDict[str, EvalData]":
         # Suite path: every metric column fans out into its own metric.

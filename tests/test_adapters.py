@@ -1097,6 +1097,24 @@ def test_mlflow_evaluate_single_audit_uses_first_metric_column():
     assert [ex.scores["model"] for ex in data.examples] == [0.0, 0.0]
 
 
+def test_mlflow_evaluate_single_audit_prefers_quality_metrics_over_bare_ones():
+    # The real fixture lists token_count before exact_match/score. The default
+    # single-audit metric must still be a quality metric (exact_match), not an
+    # operational one -- auditing token_count (14, 9) by default is surprising.
+    raw = _load(_TESTS_DIR / "fixtures" / "mlflow_eval_results_table.json")
+    data = MlflowEvaluateAdapter().parse(raw)
+    assert [ex.scores["model"] for ex in data.examples] == [0.0, 0.0]  # exact_match
+    assert [ex.scores["model"] for ex in data.examples] != [14.0, 9.0]  # not token_count
+
+
+def test_mlflow_evaluate_single_audit_falls_back_to_bare_metrics_when_alone():
+    # A table with only operational columns still audits: token_count first.
+    raw = {"columns": ["questions", "token_count", "latency"],
+           "data": [["q1", 12, 0.53], ["q2", 9, 0.41]]}
+    data = MlflowEvaluateAdapter().parse(raw)
+    assert [ex.scores["model"] for ex in data.examples] == [12.0, 9.0]
+
+
 def test_mlflow_evaluate_suite_fans_out_every_metric_column():
     suite = MlflowEvaluateAdapter().parse_suite(MLFLOW_EVALUATE)
     assert set(suite.keys()) == {"exact_match", "toxicity/v1"}
@@ -1140,6 +1158,8 @@ def test_mlflow_evaluate_skips_and_counts_an_unreadable_metric_score():
     assert suite["exact_match"].n_examples == 2
     assert suite["toxicity/v1"].n_examples == 1
     assert suite["toxicity/v1"].metadata["skipped_rows"] == 1
+    # The bad toxicity cell must not leak into the clean metric's metadata.
+    assert suite["exact_match"].metadata["skipped_rows"] == 0
 
 
 def test_mlflow_evaluate_raises_when_no_row_has_a_usable_metric_score():
