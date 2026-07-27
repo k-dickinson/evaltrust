@@ -143,6 +143,26 @@ per metric, or a follow-up per-metric suite mode:
 evaltrust audit gpt4_langfuse.json claude_langfuse.json
 ```
 
+### HELM
+
+HELM (`crfm-helm`) writes a `per_instance_stats.json` — a list of per-instance
+blocks, each with an `instance_id` and a `stats` list. Every stat carries a
+nested `name` object (the metric name, e.g. `exact_match`, `quasi_exact_match`,
+`f1_score`) and a `mean` value. EvalTrust maps `instance_id` to the example,
+each stat's `name.name` to a metric, and its `mean` to the score. Detection is
+structural (the `instance_id` + nested-`name` fingerprint), never by filename.
+
+A HELM run covers one model, so compare two runs:
+
+```bash
+evaltrust audit helm_run_a.json helm_run_b.json
+```
+
+Every named metric fans out into its own audit in suite mode; the single-audit
+path picks a correctness metric (`exact_match`, `quasi_exact_match`, ...).
+HELM's bookkeeping stats (`num_trials`, `num_prompt_tokens`, `finish_reason_*`,
+...) are dropped so a suite audit only holds real quality metrics.
+
 ### Nested JSON
 
 A structured object with a list of examples, each carrying per-model scores:
@@ -290,9 +310,9 @@ without a `metric` column is treated as a single metric, exactly as before. See
 
 ## Single-model tools (two-file comparison)
 
-Some tools - DeepEval, Langfuse, LangSmith, Ragas, OpenEvals, Inspect - evaluate
-one model per run, so a single export contains only one model. Run each model,
-then pass both files:
+Some tools - DeepEval, Langfuse, LangSmith, Ragas, OpenEvals, Inspect, HELM,
+OpenAI Evals - evaluate one model per run, so a single export contains only one
+model. Run each model, then pass both files:
 
 ```bash
 evaltrust audit gpt4_run.json claude_run.json

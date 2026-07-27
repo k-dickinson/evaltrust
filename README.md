@@ -337,6 +337,7 @@ produced and auto-detects the shape. First-class adapters today:
 - **LangSmith** run export (one experiment per run - pass two files to compare)
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
 - **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)
+- **HELM** per-instance results (`per_instance_stats.json`) (one model per run - pass two files to compare)
 - **lm-eval** (`lm-evaluation-harness`) sample logs (`.jsonl`)
 - **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`
 - **Record lists** - JSON like `[{"id", "model", "score"}, ...]`
@@ -346,6 +347,9 @@ Tools without a dedicated adapter yet work by exporting to CSV or a record
 list - usually a one-liner. More native adapters are a top roadmap item;
 [contributing one](docs/adapters.md) is straightforward.
 Details and single-model pairing in [`docs/input-formats.md`](docs/input-formats.md).
+
+Large JSONL and CSV files are streamed rather than read whole into memory; big
+`.json` files stream too with the optional `ijson` extra (`pip install "evaltrust[streaming]"`).
 
 ## How it works
 
@@ -364,8 +368,8 @@ resampling is seeded, so the auditor is itself reproducible. See
 Where it's headed (individual tasks are tracked in
 [issues](https://github.com/k-dickinson/evaltrust/issues)):
 
-- **Next:** native adapters for hosted platforms (LangSmith, Braintrust, ...), an
-  optional HTML report, and richer history/trend tracking.
+- **Next:** native adapters for more hosted platforms (Braintrust, Weights & Biases, ...),
+  and richer history/trend tracking.
 - **Later:** opt-in orchestration for the pillars that need to *generate* evidence
   (robustness perturbations, extra judges) and a provenance/reproducibility check.
 
