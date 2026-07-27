@@ -62,6 +62,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declare equivalence over-optimistically.
 
 ### Added
+- **Benchmark contamination audit.** Added a new `contamination` CLI command to audit a benchmark dataset against a reference/training dataset for exact and near-match leaks.
 - **Optional Bayesian paired comparison.** `audit --bayesian` reports the posterior decisive-example win probability and a 95% credible interval without changing the default output or verdict.
 - **Optional all-pairs comparison (`--all-pairs`).** Single-file audits can test
   every declared model pair, correct across the pairs with shared scores, and
@@ -118,7 +119,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (still driven by the effect-size magnitude).
 
 ### Fixed
-- **Fixed file decoding for non-UTF-8 default locales.** The CLI now explicitly uses UTF-8 when reading evaluation results files, preventing `UnicodeDecodeError` on systems (like Windows) where the default locale encoding is not UTF-8.
 - **Multi-scorer Inspect and OpenEvals logs fan out into a full metric suite.** On
   the suite path (`load_suite` / `audit_suite`), every scorer in an Inspect or
   OpenEvals log now becomes its own metric instead of silently keeping only the

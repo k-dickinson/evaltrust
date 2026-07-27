@@ -282,5 +282,137 @@ def diff(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def contamination(
+    benchmark: str = typer.Argument(..., help="Path to the benchmark dataset file."),
+    reference: str = typer.Argument(..., help="Path to the reference/training dataset file."),
+    column: str = typer.Option("prompt", "--column", help="The column or key containing the text (e.g. 'prompt', 'text', 'input')."),
+    fail_over: Optional[float] = typer.Option(
+        None, "--fail-over",
+        help="Exit non-zero when contamination fraction exceeds this value (0–1). Defaults to 0.15.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the result as JSON (for CI and tooling)."),
+) -> None:
+    """Audit a benchmark dataset against a reference dataset for contamination.
+
+    Note: Near-match detection uses a quadratic O(N*M) SequenceMatcher approach intended
+    for modest dataset sizes. For very large reference corpora, a scalable n-gram
+    or MinHash approach should be used instead.
+    """
+    from .audit.contamination import run_contamination_audit
+    import csv
+
+    def load_texts(path: str, col: str) -> list[str]:
+        p = Path(path)
+        if not p.exists():
+            _err.print(f"[red]File not found: {path}[/red]")
+            raise typer.Exit(code=2)
+
+        text = p.read_text(encoding="utf-8")
+        suffix = p.suffix.lower()
+
+        texts: list[str] = []
+        skipped = 0
+        if suffix == ".csv":
+            import io
+            reader = csv.DictReader(io.StringIO(text))
+            for row in reader:
+                if col not in row:
+                    skipped += 1
+                    continue
+                val = row[col]
+                if val is None or not isinstance(val, str):
+                    _err.print(f"[red]Column '{col}' in CSV has a non-string value.[/red]")
+                    raise typer.Exit(code=2)
+                texts.append(val)
+        elif suffix == ".jsonl":
+            for i, line in enumerate(text.split('\n')):
+                line = line.rstrip('\r')
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if col not in row:
+                    skipped += 1
+                    continue
+                val = row[col]
+                if not isinstance(val, str):
+                    _err.print(f"[red]Key '{col}' in JSONL line {i+1} is not a string.[/red]")
+                    raise typer.Exit(code=2)
+                texts.append(val)
+        elif suffix == ".json":
+            data = json.loads(text)
+            if not isinstance(data, list):
+                _err.print("[red]JSON file must contain an array of objects.[/red]")
+                raise typer.Exit(code=2)
+            for row in data:
+                if not isinstance(row, dict) or col not in row:
+                    skipped += 1
+                    continue
+                val = row[col]
+                if not isinstance(val, str):
+                    _err.print(f"[red]Key '{col}' in JSON array item is not a string.[/red]")
+                    raise typer.Exit(code=2)
+                texts.append(val)
+        else:
+            _err.print(f"[red]Unsupported file format: {suffix}[/red]")
+            raise typer.Exit(code=2)
+
+        if skipped:
+            _warn.print(
+                f"[yellow]{skipped} row(s) missing column '{col}' in '{path}' — skipped.[/yellow]"
+            )
+        if not texts:
+            _err.print(f"[red]No usable rows found in '{path}' for column '{col}'.[/red]")
+            raise typer.Exit(code=2)
+
+        return texts
+
+    try:
+        bench_texts = load_texts(benchmark, column)
+        ref_texts = load_texts(reference, column)
+    except Exception as e:
+        if isinstance(e, typer.Exit):
+            raise
+        _err.print(f"[red]Error parsing files: {e}[/red]")
+        raise typer.Exit(code=2) from None
+
+    result = run_contamination_audit(bench_texts, ref_texts)
+
+    # Validate --fail-over range.
+    if fail_over is not None and not (0.0 <= fail_over <= 1.0):
+        _err.print(f"[red]--fail-over must be between 0 and 1 (got {fail_over})[/red]")
+        raise typer.Exit(code=2)
+
+    # Determine the effective fail threshold (default 15 %).
+    threshold_frac = fail_over if fail_over is not None else 0.15
+
+    if as_json:
+        typer.echo(json.dumps({
+            "total_items": result.total_items,
+            "exact_matches": result.exact_matches,
+            "near_matches": result.near_matches,
+            "contamination_fraction": result.contamination_fraction,
+        }, indent=2))
+    else:
+        frac = result.contamination_fraction * 100
+        color = typer.colors.GREEN if frac < 5 else typer.colors.YELLOW if frac < 15 else typer.colors.RED
+        typer.echo("\nEvalTrust Benchmark Contamination Audit")
+        typer.echo("=======================================")
+        typer.echo(f"Total benchmark items: {result.total_items}")
+        typer.echo(f"Exact matches found:   {result.exact_matches}")
+        typer.echo(f"Near matches found:    {result.near_matches}")
+        typer.echo("Contamination level:   ", nl=False)
+        typer.secho(f"{frac:.1f}%", fg=color, bold=True)
+        typer.echo("")
+        if frac > 0:
+            typer.secho(
+                "\nWarning: Overlap detected between benchmark and reference sets.",
+                fg=typer.colors.YELLOW,
+            )
+
+    if result.contamination_fraction >= threshold_frac:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()
