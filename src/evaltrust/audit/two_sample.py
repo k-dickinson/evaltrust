@@ -109,7 +109,7 @@ def audit_two_sample(
             n_a=data.n_a,
             n_b=data.n_b,
         ),
-        # FIX (image 2): pass model_a/model_b explicitly so descriptive stats
+        # Pass model_a/model_b explicitly so descriptive stats
         # are always labelled by the fixed model name, never by rank.
         _effect_size(
             a=a,
@@ -184,7 +184,7 @@ def _decision(
         fix = "Treat the two models as equivalent on aggregate quality. Decide on cost or speed."
         outcome = "equivalent"
     else:
-        # FIX (image 1): inconclusive branch — p_mw may or may not be < alpha
+        # Inconclusive branch — p_mw may or may not be < alpha
         # (e.g. significant but CI straddles 0.5).  State the actual p-value
         # without asserting the comparison to alpha; the CI width is the real
         # reason this case is inconclusive.
@@ -234,7 +234,7 @@ def _effect_size(
     p_hat: float,
     leader: str,
     trailer: str,
-    # FIX (image 2): always label descriptive stats by the fixed model name,
+    # Always label descriptive stats by the fixed model name,
     # not by rank — mean_a/std_a always describe scores_a regardless of which
     # model is currently the leader.
     model_a: str,
@@ -331,7 +331,7 @@ def _precision(
             f"Collect more runs (aim for >= {_MIN_RUNS_RECOMMENDED} per model) "
             "to narrow the confidence interval before acting on this result."
         )
-    # FIX (image 3): split the "not significant + sufficient" case out of the
+    # Split the "not significant + sufficient" case out of the
     # catch-all else branch so shortage is never computed (and never negative)
     # when both models already meet the minimum.
     elif not significant and sufficient:

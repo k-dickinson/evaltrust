@@ -891,9 +891,9 @@ def load_run_level(
 
     # --- JSON / JSONL: dict mapping model -> [scores] ---
     if suffix in (".json", ".jsonl"):
-        # FIX (image 6, part 2): true JSONL — try each line as a separate JSON
-        # object when the file has the .jsonl extension; fall back to whole-file
-        # parsing for .json (and for single-object JSONL files).
+        # True JSONL — try each line as a separate JSON object when the file
+        # has the .jsonl extension; fall back to whole-file parsing for .json
+        # (and for single-object JSONL files).
         raw: dict | None = None
         text_j = p.read_text(encoding="utf-8")
         if suffix == ".jsonl":
@@ -944,9 +944,9 @@ def load_run_level(
                     f"Model {m!r} not found in run-level JSON; "
                     f"available: {models_in_file!r}."
                 )
-        # FIX (image 6, part 1): validate that each value is a list of numbers.
-        # np.array(scalar, dtype=float) produces a 0-d array that breaks
-        # _p_a_gt_b's indexing; catch this before it reaches the stats layer.
+        # Validate that each value is a list of numbers before passing to
+        # np.array. A scalar yields a 0-d array that breaks _p_a_gt_b's
+        # indexing; catch this here with a clear error.
         for m, arr_key in ((model_a, "model_a"), (model_b, "model_b")):
             val = raw[m]
             if not isinstance(val, list):
@@ -970,9 +970,9 @@ def load_run_level(
 
     # --- CSV: wide or long ---
     text = p.read_text(encoding="utf-8")
-    # FIX (image 7): DictReader yields rows keyed by the *original* (unstripped)
-    # header text.  Stripping only the fieldnames list but then indexing rows by
-    # the stripped name causes KeyError for headers with surrounding whitespace.
+    # DictReader yields rows keyed by the *original* (unstripped) header text.
+    # Stripping only the fieldnames list but then indexing rows by the stripped
+    # name causes KeyError for headers with surrounding whitespace.
     # Solution: re-key each row using the stripped field names so all lookups
     # below work correctly regardless of whitespace in the CSV header.
     _raw_reader = csv.DictReader(io.StringIO(text))
@@ -1052,10 +1052,9 @@ def load_run_level(
     from ..adapters.common import coerce_score
     a_vals, b_vals = [], []
     for row in reader:
-        # FIX (image 8): parse both scores before appending either one so a
-        # parse failure on column B does not leave a half-ingested A value.
-        # Also validate that b_vals is non-empty (not just a_vals) so a
-        # totally unreadable B column is caught here with a clear error.
+        # Parse both scores before appending either one so a parse failure on
+        # column B does not leave a half-ingested A value. Also validate that
+        # b_vals is non-empty so a totally unreadable B column is caught here.
         try:
             a_val = coerce_score(row[model_a])
             b_val = coerce_score(row[model_b])
