@@ -199,8 +199,7 @@ def audit(
         if as_json:
             typer.echo(json.dumps(report_dict, indent=2))
         elif plain or md:
-            # FIX (image 4): --plain and --md were silently ignored; now both
-            # emit the same plain-text summary (no colour, ASCII icons only).
+            # --plain and --md emit the same plain-text summary (no colour, ASCII icons only).
             _warn.print(
                 "[yellow]--md/--plain are not yet fully supported for --run-level "
                 "audits; printing the standard plain summary instead.[/yellow]"
@@ -218,9 +217,9 @@ def audit(
                     typer.echo(f"    {f.how_detected}")
             typer.echo("")
         else:
-            # FIX (image 5): model names and finding titles may contain square
-            # brackets (e.g. "gpt-4[preview]") which Rich interprets as markup
-            # tags.  Escape all interpolated values before passing to _con.print.
+            # Model names and finding titles may contain square brackets
+            # (e.g. "gpt-4[preview]") which Rich interprets as markup tags.
+            # Escape all interpolated values before passing to _con.print.
             from rich.console import Console as _Console
             from rich.markup import escape as _escape
             _con = _Console()
