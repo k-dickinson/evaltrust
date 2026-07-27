@@ -10,6 +10,7 @@ import math
 import warnings
 from dataclasses import dataclass, field, fields
 from difflib import get_close_matches
+from numbers import Integral
 from pathlib import Path
 from types import MappingProxyType
 
@@ -71,6 +72,8 @@ class AuditConfig:
     n_resamples: int = 10_000               # bootstrap / permutation resamples
     seed: int = 0                           # RNG seed (reproducibility)
     bayesian: bool = False                  # optional Bayesian paired-comparison view
+    run_aware: bool = False                 # optional fixed-example predictive rerun view
+    run_aware_future_runs: int | None = None  # explicit future runs for that view
     correction: str = "bonferroni"          # family correction: bonferroni | holm | none
     all_pairs: bool = False                 # compare every model pair (opt-in)
     # metrics that must reach HIGH; any below HIGH → suite is LOW immediately
@@ -82,6 +85,16 @@ class AuditConfig:
         default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
+        if self.run_aware and (
+            isinstance(self.run_aware_future_runs, bool)
+            or not isinstance(self.run_aware_future_runs, Integral)
+            or self.run_aware_future_runs <= 0
+        ):
+            raise ValueError(
+                "run_aware_future_runs must be a positive integer when "
+                "run_aware is enabled"
+            )
+
         # Coerce and validate metric_weights so callers using the constructor
         # directly (not from_dict) get the same guarantees.
         if not isinstance(self.metric_weights, MappingProxyType):
@@ -126,6 +139,8 @@ class AuditConfig:
             self.n_resamples,
             self.seed,
             self.bayesian,
+            self.run_aware,
+            self.run_aware_future_runs,
             self.correction,
             self.all_pairs,
             self.gated_metrics,

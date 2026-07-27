@@ -11,6 +11,7 @@ from ..core.schema import EvalData, Finding, Status
 from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 from .allpairs import audit_all_pairs
 from .bayesian import audit_bayesian_win_probability
+from .predictive_rerun import audit_predictive_rerun
 from .rank_stability import audit_rank_stability
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
@@ -216,6 +217,14 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
             ),
             "preference_only" if preference_only else "no_paired_scores",
         ))
+
+    if cfg.run_aware:
+        findings += audit_predictive_rerun(
+            data,
+            model_a,
+            model_b,
+            future_runs=cfg.run_aware_future_runs,
+        )
 
     if cfg.bayesian:
         findings += audit_bayesian_win_probability(data, model_a, model_b)
