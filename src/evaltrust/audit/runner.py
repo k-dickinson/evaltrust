@@ -12,6 +12,7 @@ from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 from .allpairs import audit_all_pairs
 from .bayesian import audit_bayesian_win_probability
 from .predictive_rerun import audit_predictive_rerun
+from .win_rate import audit_win_rate
 from .rank_stability import audit_rank_stability
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
@@ -228,6 +229,9 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
 
     if cfg.bayesian:
         findings += audit_bayesian_win_probability(data, model_a, model_b)
+
+    if cfg.win_rate:
+        findings += audit_win_rate(data, model_a, model_b, seed=cfg.seed)
 
     if cfg.all_pairs:
         findings += audit_all_pairs(data, cfg)

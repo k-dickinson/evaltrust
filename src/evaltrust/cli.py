@@ -94,6 +94,13 @@ def audit(
         None,
         "--bayesian/--no-bayesian",
         help="Add the Bayesian decisive-pair win probability."),
+    win_rate: Optional[bool] = typer.Option(
+        None,
+        "--win-rate/--no-win-rate",
+        help=(
+            "Add how often the first model scores higher on paired examples, "
+            "with ties half credit and a bootstrap interval."
+        )),
     run_aware: Optional[bool] = typer.Option(
         None,
         "--run-aware/--no-run-aware",
@@ -170,6 +177,7 @@ def audit(
                                    ("equivalence_margin", equivalence_margin),
                                    ("seed", seed),
                                    ("bayesian", bayesian),
+                                   ("win_rate", win_rate),
                                    ("run_aware", run_aware),
                                    ("run_aware_future_runs", future_runs),
                                    ("reference_judge", reference_judge),

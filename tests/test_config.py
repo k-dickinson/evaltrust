@@ -14,8 +14,20 @@ def test_defaults_match_the_documented_values():
     assert c.judge_agreement_threshold == 0.8
     assert c.judge_correlation_threshold == 0.8
     assert c.bayesian is False
+    assert c.win_rate is False
     assert c.run_aware is False
     assert c.run_aware_future_runs is None
+
+
+def test_win_rate_participates_in_equality_and_hash():
+    default_a = AuditConfig()
+    default_b = AuditConfig()
+    enabled = AuditConfig(win_rate=True)
+
+    assert default_a == default_b
+    assert hash(default_a) == hash(default_b)
+    assert enabled != default_a
+    assert hash(enabled) != hash(default_a)
 
 
 def test_run_aware_fields_participate_in_equality_and_hash():
