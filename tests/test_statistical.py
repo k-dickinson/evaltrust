@@ -1,10 +1,12 @@
 """Tests for the Statistical Validity audit — EvalTrust's flagship check.
 
-The audit produces three findings:
+The audit produces four findings:
   - decision:   is there a real, meaningful improvement? (significant /
                 equivalent / inconclusive) — never a blunt "not significant = fail"
   - effect_size: how big is it, in interpretable terms (Cohen's d, or a proportion
                 effect size for binary data)
+  - p_a_gt_b:   how likely is one model to beat the other on a randomly chosen
+                example (probability of superiority), with a bootstrap CI
   - precision:  was the sample large enough, framed prospectively (minimum
                 detectable effect), not as post-hoc power
 """
@@ -34,6 +36,57 @@ def test_produces_four_checks():
     findings = audit_statistical_validity(make_data([0] * 50, [1] * 50), "A", "B")
     assert {f.details["check"] for f in findings} == {
         "decision", "effect_size", "p_a_gt_b", "precision"}
+
+
+def test_p_a_gt_b_is_stated_in_a_over_b_terms():
+    """A sweeps every example, so P(A > B) is 1.0 — not 0.0.
+
+    The statistic is defined on ``score_b - score_a``. Feeding it the
+    leader-oriented differences flips the sign whenever A leads, which reads as
+    A losing every example it in fact won.
+    """
+    findings = audit_statistical_validity(make_data([1] * 10, [0] * 10), "A", "B", seed=0)
+    f = by_check(findings, "p_a_gt_b")
+    assert f.details["p_a_gt_b"] == pytest.approx(1.0)
+    assert f.details["ci_low"] <= f.details["p_a_gt_b"] <= f.details["ci_high"]
+    assert f.title == "P(A > B) = 100.0%"
+
+
+def test_p_a_gt_b_orients_by_the_mean_leader_not_the_win_rate():
+    """A wins more examples; B wins by more. Those pick different models.
+
+    A takes 7 of 10 examples by one point, B takes 3 by ten. B is the
+    mean-score leader that every other finding reports against, so the headline
+    must be P(B > A) even though A has the higher per-example win rate.
+    """
+    a = [1] * 7 + [0] * 3
+    b = [0] * 7 + [10] * 3
+    findings = audit_statistical_validity(make_data(a, b), "A", "B", seed=0)
+    f = by_check(findings, "p_a_gt_b")
+
+    # The raw A/B statistic is unaffected by which model leads on mean score.
+    assert f.details["p_a_gt_b"] == pytest.approx(0.7)
+    assert f.details["ci_low"] <= f.details["p_a_gt_b"] <= f.details["ci_high"]
+    assert f.how_detected.startswith("P(A > B) = 0.700")
+
+    # The headline follows the leader, and its CI is the mirrored interval.
+    assert f.title == "P(B > A) = 30.0%"
+    assert f.details["p_leader_gt_trailer"] == pytest.approx(0.3)
+    assert f.details["ci_low_leader"] == pytest.approx(1.0 - f.details["ci_high"])
+    assert f.details["ci_high_leader"] == pytest.approx(1.0 - f.details["ci_low"])
+    assert f.details["ci_low_leader"] <= f.details["p_leader_gt_trailer"] <= f.details["ci_high_leader"]
+
+
+def test_p_a_gt_b_ci_varies_across_bootstrap_resamples():
+    """A degenerate CI means the statistic collapsed every resample to one
+    scalar instead of reducing per row."""
+    rng = np.random.default_rng(0)
+    a = rng.normal(0.0, 1.0, 60)
+    b = a + rng.normal(0.2, 1.0, 60)
+    findings = audit_statistical_validity(make_data(a, b), "A", "B",
+                                          n_resamples=500, seed=0)
+    f = by_check(findings, "p_a_gt_b")
+    assert f.details["ci_low"] < f.details["ci_high"]
 
 
 def test_clean_win_is_a_significant_improvement():

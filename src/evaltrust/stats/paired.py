@@ -41,3 +41,22 @@ def paired_p_a_gt_b(differences: np.ndarray) -> float:
     a_wins = float(np.sum(d < 0))
     ties = float(np.sum(d == 0))
     return (a_wins + 0.5 * ties) / n
+
+
+def paired_p_a_gt_b_along_rows(matrix: np.ndarray) -> np.ndarray:
+    """P(A > B) for each row of a 2-D array of paired differences.
+
+    A vectorized companion to :func:`paired_p_a_gt_b`, used to compute the
+    probability of superiority across many bootstrap resamples at once. Each
+    row is reduced over the last axis with the *same* tie handling as the
+    scalar version (ties count as 0.5), so the two agree on any single row.
+    """
+    d = np.asarray(matrix, dtype=float)
+    n = d.shape[-1]
+    if n == 0:
+        raise ValueError(
+            "paired_p_a_gt_b_along_rows requires at least one difference"
+        )
+    a_wins = np.sum(d < 0, axis=-1)
+    ties = np.sum(d == 0, axis=-1)
+    return (a_wins + 0.5 * ties) / n
