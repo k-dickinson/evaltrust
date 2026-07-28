@@ -67,6 +67,8 @@ def fleiss_kappa(table: np.ndarray) -> float:
     if not np.allclose(n_raters, n_raters[0]):
         raise ValueError("fleiss_kappa requires the same rater count per item")
     m = float(n_raters[0])
+    if m < 2:
+        raise ValueError("fleiss_kappa requires at least two raters per item")
 
     # Per-item agreement.
     p_item = (np.sum(table**2, axis=1) - m) / (m * (m - 1))

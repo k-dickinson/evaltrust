@@ -40,6 +40,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one with `make sbom`, and a `SBOM` workflow attaches one to every published
   release. Corrected the stale supported-versions table.
 - **Opt-in all-example paired win rate.** Added `--win-rate` to report how often the first model scores higher across paired examples, with exact ties receiving half credit and a seeded percentile-bootstrap interval. The advisory finding does not change default output or the verdict (#133).
+- **Fleiss' kappa input validation.** Single-rater tables now raise a clear `ValueError` instead of returning `nan` with a `RuntimeWarning` (#151).
 
 ### Added
 - **MLflow evaluate adapter.** Read the per-row `eval_results_table` that
