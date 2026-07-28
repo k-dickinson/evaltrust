@@ -7,6 +7,7 @@ Verdict, checks grouped by pillar, then what to do. Per-flag reasoning is one
 from __future__ import annotations
 
 import io
+import math
 from collections import OrderedDict
 
 from rich.console import Console
@@ -26,6 +27,41 @@ _PLAIN_MARK = {Status.PASS: "ok  ", Status.WARN: "warn",
                Status.FAIL: "fail", Status.SKIP: "--  "}
 _DOT = {VerdictLevel.HIGH: "green", VerdictLevel.MODERATE: "yellow",
         VerdictLevel.LOW: "red"}
+
+
+def _is_unbounded_paired_effect(finding: Finding) -> bool:
+    details = getattr(finding, "details", {})
+    if details.get("check") != "effect_size":
+        return False
+    value = details.get("cohens_d")
+    try:
+        return math.isinf(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _display_title(finding: Finding) -> str:
+    if _is_unbounded_paired_effect(finding):
+        return "Effect size: unbounded (zero variance in gap)"
+    return finding.title
+
+
+def _display_how_detected(finding: Finding) -> str:
+    if _is_unbounded_paired_effect(finding):
+        return (
+            "Cohen's d is unbounded because every paired gap is the same "
+            "nonzero value, so the gap has zero variance."
+        )
+    return finding.how_detected
+
+
+def _detail_findings(findings: list[Finding]) -> list[Finding]:
+    return [
+        finding
+        for finding in findings
+        if finding.status is not Status.PASS
+        or _is_unbounded_paired_effect(finding)
+    ]
 
 
 def _grouped(findings) -> "OrderedDict[str, list[Finding]]":
@@ -72,7 +108,7 @@ def _renderable(report: AuditReport, explain: bool = False) -> Text:
         for f in items:
             sym, color = _SYMBOL[f.status]
             t.append(f"  {sym} ", style=color)
-            t.append(f.title, style=("dim" if f.status is Status.SKIP else ""))
+            t.append(_display_title(f), style=("dim" if f.status is Status.SKIP else ""))
             t.append("\n")
 
     todo = [f.how_to_fix for f in report.findings
@@ -83,15 +119,15 @@ def _renderable(report: AuditReport, explain: bool = False) -> Text:
     _bullets(t, "To check more", optional, style="dim")
 
     if explain:
-        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        flagged = _detail_findings(report.findings)
         if flagged:
             t.append("\nDetail\n", style="bold")
             for f in flagged:
                 sym, color = _SYMBOL[f.status]
                 t.append(f"\n  {sym} ", style=color)
-                t.append(f"{f.title}\n", style="bold")
+                t.append(f"{_display_title(f)}\n", style="bold")
                 t.append(f"    {f.why}\n", style="dim")
-                t.append(f"    {f.how_detected}\n", style="dim")
+                t.append(f"    {_display_how_detected(f)}\n", style="dim")
     return t
 
 
@@ -280,7 +316,7 @@ def render_plain(report: AuditReport, explain: bool = False) -> str:
         lines.append("")
         lines.append(pillar)
         for f in items:
-            lines.append(f"  [{_PLAIN_MARK[f.status]}] {f.title}")
+            lines.append(f"  [{_PLAIN_MARK[f.status]}] {_display_title(f)}")
 
     todo = [f.how_to_fix for f in report.findings
             if f.status in (Status.WARN, Status.FAIL)]
@@ -292,12 +328,15 @@ def render_plain(report: AuditReport, explain: bool = False) -> str:
         lines += ["", "To check more"] + [f"  - {x}" for x in optional]
 
     if explain:
-        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        flagged = _detail_findings(report.findings)
         if flagged:
             lines += ["", "Detail"]
             for f in flagged:
-                lines += [f"  [{_PLAIN_MARK[f.status]}] {f.title}",
-                          f"    {f.why}", f"    {f.how_detected}"]
+                lines += [
+                    f"  [{_PLAIN_MARK[f.status]}] {_display_title(f)}",
+                    f"    {f.why}",
+                    f"    {_display_how_detected(f)}",
+                ]
 
     return ("\n".join(lines).rstrip() + "\n").translate(_ASCII)
 
@@ -327,7 +366,7 @@ def render_markdown(report: AuditReport, explain: bool = False) -> str:
         lines.append(f"### {pillar}")
         lines.append("")
         for f in items:
-            lines.append(f"- **[{_MD_MARK[f.status]}]** {f.title}")
+            lines.append(f"- **[{_MD_MARK[f.status]}]** {_display_title(f)}")
         lines.append("")
 
     todo = [f.how_to_fix for f in report.findings
@@ -340,12 +379,18 @@ def render_markdown(report: AuditReport, explain: bool = False) -> str:
         lines += ["## To check more", ""] + [f"- {x}" for x in optional] + [""]
 
     if explain:
-        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        flagged = _detail_findings(report.findings)
         if flagged:
             lines += ["## Detail", ""]
             for f in flagged:
-                lines += [f"### [{_MD_MARK[f.status]}] {f.title}", "",
-                          f"{f.why}", "", f"{f.how_detected}", ""]
+                lines += [
+                    f"### [{_MD_MARK[f.status]}] {_display_title(f)}",
+                    "",
+                    f"{f.why}",
+                    "",
+                    f"{_display_how_detected(f)}",
+                    "",
+                ]
 
     return "\n".join(lines).rstrip() + "\n"
 

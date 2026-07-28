@@ -1,8 +1,10 @@
 """Tests for the terminal report rendering."""
 
+import json
+
 from evaltrust.audit.runner import run_audit
 from evaltrust.core.schema import EvalData, Example
-from evaltrust.report.terminal import render_markdown, render_report
+from evaltrust.report.terminal import render_markdown, render_plain, render_report
 
 
 def make_data(scores_by_model, n):
@@ -53,6 +55,43 @@ def test_explain_adds_detail_and_default_omits_it():
     report = run_audit(make_data({"A": [0, 1] * 60, "B": [1, 0] * 60}, 120))
     assert "Detail" not in render_report(report)
     assert "Detail" in render_report(report, explain=True)
+
+
+def test_unbounded_paired_effect_has_a_finite_terminal_label_and_explanation():
+    report = run_audit(make_data({"A": [1.0] * 8, "B": [2.0] * 8}, 8))
+    effect = next(
+        finding
+        for finding in report.findings
+        if finding.details.get("check") == "effect_size"
+    )
+    payload_before = json.dumps(
+        report.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+
+    default = render_report(report)
+    explained = render_report(report, explain=True)
+    plain = render_plain(report, explain=True)
+
+    label = "Effect size: unbounded (zero variance in gap)"
+    assert label in default
+    assert label in explained
+    assert label in plain
+    assert "every paired gap is the same nonzero value" in explained
+    assert "every paired gap is the same nonzero value" in plain
+    for rendered in (default, explained, plain):
+        assert "infinite" not in rendered
+        assert "+inf" not in rendered
+        assert "-inf" not in rendered
+
+    # Rendering must not rewrite the machine-readable finding. Its non-finite
+    # numeric fields continue through the existing strict-JSON null mapping.
+    assert effect.details["cohens_d"] == float("inf")
+    assert effect.to_dict()["details"]["cohens_d"] is None
+    assert effect.to_dict()["details"]["ci_low"] is None
+    assert effect.to_dict()["details"]["ci_high"] is None
+    assert json.dumps(
+        report.to_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False
+    ) == payload_before
 
 
 def test_skip_guidance_shown_under_to_check_more():

@@ -2,8 +2,9 @@
 
 from types import SimpleNamespace
 
+from evaltrust.audit.runner import run_audit
 from evaltrust.audit.verdict import VerdictLevel
-from evaltrust.core.schema import Status
+from evaltrust.core.schema import EvalData, Example, Status
 from evaltrust.report.html import render_html
 
 
@@ -70,6 +71,30 @@ def test_html_explain_includes_why_and_how_detected():
     for f in flagged:
         assert f.why in html
         assert f.how_detected in html
+
+
+def test_html_labels_and_explains_an_unbounded_paired_effect_safely():
+    data = EvalData(
+        models=["A", "B"],
+        examples=[
+            Example(id=str(i), scores={"A": 1.0, "B": 2.0})
+            for i in range(8)
+        ],
+        source_format="test",
+    )
+    report = run_audit(data)
+
+    default = render_html(report)
+    explained = render_html(report, explain=True)
+
+    label = "Effect size: unbounded (zero variance in gap)"
+    assert label in default
+    assert label in explained
+    assert "every paired gap is the same nonzero value" in explained
+    for rendered in (default, explained):
+        assert "infinite" not in rendered
+        assert "+inf" not in rendered
+        assert "-inf" not in rendered
 
 
 def test_html_low_confidence_verdict():
