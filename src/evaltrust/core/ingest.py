@@ -947,18 +947,21 @@ def load_run_level(
         # Validate that each value is a list of numbers before passing to
         # np.array. A scalar yields a 0-d array that breaks _p_a_gt_b's
         # indexing; catch this here with a clear error.
-        for m, arr_key in ((model_a, "model_a"), (model_b, "model_b")):
-            val = raw[m]
+        for m, val in raw.items():
             if not isinstance(val, list):
                 raise ValueError(
                     f"Run-level JSON: scores for model {m!r} must be a list of "
                     f"numbers, got {type(val).__name__}."
                 )
             for i, v in enumerate(val):
-                if not isinstance(v, (int, float)):
+                if (
+                    isinstance(v, bool)
+                    or not isinstance(v, (int, float))
+                    or not np.isfinite(v)
+                ):
                     raise ValueError(
                         f"Run-level JSON: score at index {i} for model {m!r} "
-                        f"is not a number ({v!r})."
+                        f"is not a finite number ({v!r})."
                     )
         scores_a = np.array(raw[model_a], dtype=float)
         scores_b = np.array(raw[model_b], dtype=float)
