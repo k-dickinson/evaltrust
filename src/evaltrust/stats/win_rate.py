@@ -71,12 +71,12 @@ def paired_win_rate(
     n_wins_a = int(np.count_nonzero(values < 0.0))
     n_ties = int(np.count_nonzero(values == 0.0))
     n_wins_b = int(np.count_nonzero(values > 0.0))
-    credits = np.where(
+    per_example_credit = np.where(
         values < 0.0,
         1.0,
         np.where(values == 0.0, 0.5, 0.0),
     )
-    win_rate_a = float(credits.mean())
+    win_rate_a = float(per_example_credit.mean())
 
     members: list[list[int]]
     if clusters is None:
@@ -98,7 +98,7 @@ def paired_win_rate(
         members = list(grouped.values())
 
     cluster_credits = np.array(
-        [float(credits[indices].sum()) for indices in members],
+        [float(per_example_credit[indices].sum()) for indices in members],
         dtype=float,
     )
     cluster_sizes = np.array(
