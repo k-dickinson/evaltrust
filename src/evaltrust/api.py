@@ -27,7 +27,7 @@ from .audit.suite import SuiteReport, audit_suite as _audit_suite
 from .audit.two_sample import audit_two_sample
 from .config import AuditConfig
 from .core.ingest import load, load_comparison, load_run_level, load_suite
-from .core.schema import EvalData, RunLevelData
+from .core.schema import EvalData, Finding, RunLevelData
 
 
 def audit(
@@ -131,7 +131,7 @@ def audit_run_level(
     seed: int = 0,
     n_resamples: int = 10_000,
     config: "AuditConfig | None" = None,
-) -> list:
+) -> "list[Finding]":
     """Audit run-level (aggregate) scores and return a list of :class:`Finding` objects.
 
     Use this when your harness emits a single total score per run rather than

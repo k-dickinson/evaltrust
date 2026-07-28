@@ -106,9 +106,21 @@ class TestOptInKwargs:
         assert len(report.findings) > 0
 
     def test_correction_kwarg_threads_into_config(self):
-        """audit() with correction= kwarg should not raise."""
-        report = audit(_clear_win(), correction="holm")
-        assert report is not None
+        """correction= kwarg must reach AuditConfig and alter report behaviour.
+
+        We verify this via audit_suite, which exposes the correction label in
+        SuiteReport.correction. Running the same suite with bonferroni vs holm
+        confirms the value propagates rather than being silently discarded.
+        """
+        from evaltrust import audit_suite
+        suite = {
+            "correctness": _make_data({"A": [0] * 200, "B": [1] * 180 + [0] * 20}, 200),
+            "tone":         _make_data({"A": [0, 1] * 60, "B": [1, 0] * 60}, 120),
+        }
+        bonf = audit_suite(suite, correction="bonferroni")
+        holm = audit_suite(suite, correction="holm")
+        assert "bonferroni" in bonf.correction.lower()
+        assert "holm" in holm.correction.lower()
 
     def test_run_aware_requires_future_runs(self):
         """run_aware=True without run_aware_future_runs must raise at config construction."""
@@ -116,8 +128,13 @@ class TestOptInKwargs:
             audit(_clear_win(), run_aware=True)
 
     def test_run_aware_with_future_runs_accepted(self):
+        """run_aware=True must produce a predictive-rerun finding in the report."""
         report = audit(_clear_win(), run_aware=True, run_aware_future_runs=5)
-        assert report is not None
+        pillar_titles = [(f.pillar, f.title) for f in report.findings]
+        assert any(
+            "rerun" in title.lower() or "predictive" in title.lower() or "repeatab" in title.lower()
+            for _, title in pillar_titles
+        ), f"Expected a predictive-rerun finding; got: {pillar_titles}"
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +146,7 @@ class TestAuditRunLevel:
     def _write_run_level_csv(self, tmp_path, a_scores, b_scores):
         p = tmp_path / "runs.csv"
         lines = ["model_a,model_b"] + [
-            f"{a},{b}" for a, b in zip(a_scores, b_scores)
+            f"{a},{b}" for a, b in zip(a_scores, b_scores, strict=True)
         ]
         p.write_text("\n".join(lines))
         return str(p)
@@ -240,6 +257,14 @@ class TestAuditContamination:
         # High threshold: may or may not match; just must not raise.
         result = audit_contamination(benchmark, reference, threshold=0.95)
         assert isinstance(result, ContaminationResult)
+
+    def test_threshold_below_zero_raises(self):
+        with pytest.raises(ValueError, match="threshold must be in"):
+            audit_contamination(["hello"], ["hello"], threshold=-0.1)
+
+    def test_threshold_above_one_raises(self):
+        with pytest.raises(ValueError, match="threshold must be in"):
+            audit_contamination(["hello"], ["hello"], threshold=1.5)
 
     def test_empty_benchmark(self):
         result = audit_contamination([], ["some reference"])

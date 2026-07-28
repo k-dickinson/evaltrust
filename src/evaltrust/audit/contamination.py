@@ -79,6 +79,12 @@ def run_contamination_audit(
         Similarity threshold for near-match detection, in [0, 1] (default 0.85).
         A value of 1.0 only flags exact matches.
     """
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(
+            f"threshold must be in [0, 1]; got {threshold!r}. "
+            "Values below 0 flag everything as a near-match; "
+            "values above 1 silently suppress all near-match detection."
+        )
     exact_matches = _find_exact_matches(benchmark, reference)
     near_matches_indices = _find_near_matches(benchmark, reference, exact_matches,
                                               threshold=threshold)
