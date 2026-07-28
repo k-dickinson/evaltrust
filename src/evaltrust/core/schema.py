@@ -167,6 +167,44 @@ class EvalData:
 
 
 @dataclass(frozen=True)
+class RunLevelData:
+    """Run-level (aggregate) scores for two models.
+
+    Some harnesses emit only a single total score per run rather than
+    per-example scores.  In that case per-example pairing is impossible
+    and ``EvalData`` is not the right container.  ``RunLevelData`` holds
+    a flat list of run scores for each model and is consumed by the
+    unpaired two-sample comparison path.
+
+    Attributes
+    ----------
+    model_a, model_b:
+        Labels for the two models being compared.
+    scores_a, scores_b:
+        1-D arrays of run-level scores (need not be the same length).
+    source_format:
+        Adapter / format name for provenance (e.g. ``"run_level_csv"``).
+    metadata:
+        Arbitrary key/value annotations carried through to the report.
+    """
+
+    model_a: str
+    model_b: str
+    scores_a: "np.ndarray"
+    scores_b: "np.ndarray"
+    source_format: str
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def n_a(self) -> int:
+        return int(self.scores_a.size)
+
+    @property
+    def n_b(self) -> int:
+        return int(self.scores_b.size)
+
+
+@dataclass(frozen=True)
 class Finding:
     """One audit result, structured around EvalTrust's Golden Rule.
 

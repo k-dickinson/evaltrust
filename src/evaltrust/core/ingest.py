@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Generator, Iterable
 
 from .pairing import merge_two, primary_model
-from .schema import EvalData
+from .schema import EvalData, RunLevelData
 from ..adapters.common import (
     DEFAULT_METRIC,
     Record,
@@ -825,3 +825,251 @@ def _stream_records_from_jsonl(
         raise ValueError("No (example, model, score) records could be extracted")
 
     return records, "jsonl", {"skipped_rows": len(skipped)}
+
+# ---------------------------------------------------------------------------
+# Run-level (aggregate) score ingestion
+# ---------------------------------------------------------------------------
+
+def load_run_level(
+    path: str,
+    model_a: str | None = None,
+    model_b: str | None = None,
+) -> RunLevelData:
+    """Load a run-level scores file into a :class:`RunLevelData` object.
+
+    A *run-level* file records one total score per model run — no per-example
+    breakdown.  Two layouts are supported:
+
+    **Wide CSV** (one column per model, one row per run)::
+
+        model_a,model_b
+        0.81,0.79
+        0.83,0.82
+        0.80,0.78
+
+    The column names become the model labels (unless overridden by
+    ``model_a`` / ``model_b``).  All columns except ``run`` / ``run_id`` /
+    ``seed`` are treated as model score columns.
+
+    **Long CSV** (one row per (model, score) observation)::
+
+        model,score
+        my_model_a,0.81
+        my_model_a,0.83
+        my_model_b,0.79
+        my_model_b,0.82
+
+    Header aliases recognised: ``model`` / ``name`` / ``provider`` /
+    ``system`` for the model column; ``score`` / ``value`` / ``result`` /
+    ``accuracy`` for the score column.
+
+    **JSON / JSONL** — a dict mapping model label → list of scores::
+
+        {"model_a": [0.81, 0.83, 0.80], "model_b": [0.79, 0.82, 0.78]}
+
+    Parameters
+    ----------
+    path:
+        Path to the run-level scores file (CSV, JSON, or JSONL).
+    model_a, model_b:
+        Optional labels to select / rename the two models.  For wide CSV they
+        override the column names; for long CSV / JSON they select which two
+        models to compare when the file contains more than two.
+
+    Returns
+    -------
+    :class:`RunLevelData`
+        A frozen dataclass ready for the two-sample audit.
+    """
+    import numpy as np
+
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"No such run-level file: {path}")
+
+    suffix = p.suffix.lower()
+
+    # --- JSON / JSONL: dict mapping model -> [scores] ---
+    if suffix in (".json", ".jsonl"):
+        # True JSONL — try each line as a separate JSON object when the file
+        # has the .jsonl extension; fall back to whole-file parsing for .json
+        # (and for single-object JSONL files).
+        raw: dict | None = None
+        text_j = p.read_text(encoding="utf-8")
+        if suffix == ".jsonl":
+            # Try to parse as newline-delimited JSON objects merged into one dict.
+            merged: dict = {}
+            parse_error: json.JSONDecodeError | None = None
+            for line in text_j.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as e:
+                    parse_error = e
+                    break
+                if isinstance(obj, dict):
+                    merged.update(obj)
+            if parse_error is None and merged:
+                raw = merged
+        if raw is None:
+            # Whole-file JSON parse (covers .json and single-object .jsonl).
+            try:
+                raw = json.loads(text_j)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Could not parse '{p.name}' as JSON: {e.msg}"
+                ) from e
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"Run-level JSON must be an object mapping model names to score "
+                f"lists; got {type(raw).__name__}."
+            )
+        models_in_file = list(raw.keys())
+        if model_a is None and model_b is None:
+            if len(models_in_file) < 2:
+                raise ValueError(
+                    "Run-level JSON must contain scores for at least two models; "
+                    f"found: {models_in_file!r}."
+                )
+            model_a, model_b = models_in_file[0], models_in_file[1]
+        elif model_a is None or model_b is None:
+            raise ValueError(
+                "Supply both --model-a and --model-b or neither."
+            )
+        for m in (model_a, model_b):
+            if m not in raw:
+                raise ValueError(
+                    f"Model {m!r} not found in run-level JSON; "
+                    f"available: {models_in_file!r}."
+                )
+        # Validate that each value is a list of numbers before passing to
+        # np.array. A scalar yields a 0-d array that breaks _p_a_gt_b's
+        # indexing; catch this here with a clear error.
+        for m, arr_key in ((model_a, "model_a"), (model_b, "model_b")):
+            val = raw[m]
+            if not isinstance(val, list):
+                raise ValueError(
+                    f"Run-level JSON: scores for model {m!r} must be a list of "
+                    f"numbers, got {type(val).__name__}."
+                )
+            for i, v in enumerate(val):
+                if not isinstance(v, (int, float)):
+                    raise ValueError(
+                        f"Run-level JSON: score at index {i} for model {m!r} "
+                        f"is not a number ({v!r})."
+                    )
+        scores_a = np.array(raw[model_a], dtype=float)
+        scores_b = np.array(raw[model_b], dtype=float)
+        return RunLevelData(
+            model_a=model_a, model_b=model_b,
+            scores_a=scores_a, scores_b=scores_b,
+            source_format="run_level_json",
+        )
+
+    # --- CSV: wide or long ---
+    text = p.read_text(encoding="utf-8")
+    # DictReader yields rows keyed by the *original* (unstripped) header text.
+    # Stripping only the fieldnames list but then indexing rows by the stripped
+    # name causes KeyError for headers with surrounding whitespace.
+    # Solution: re-key each row using the stripped field names so all lookups
+    # below work correctly regardless of whitespace in the CSV header.
+    _raw_reader = csv.DictReader(io.StringIO(text))
+    if _raw_reader.fieldnames is None:
+        raise ValueError(f"'{p.name}' appears to be an empty CSV.")
+    fieldnames = [f.strip() for f in _raw_reader.fieldnames]
+    # Build normalised rows: {stripped_header: value} for every row.
+    _key_map = {orig: stripped for orig, stripped in zip(_raw_reader.fieldnames, fieldnames)}
+    reader = (
+        {_key_map[k]: v for k, v in row.items() if k in _key_map}
+        for row in _raw_reader
+    )
+
+    # Skip metadata columns that are never model names.
+    _META_COLS = {"run", "run_id", "seed", "iteration", "trial", "index"}
+    _MODEL_COL_ALIASES = {"model", "name", "provider", "system", "variant"}
+    _SCORE_COL_ALIASES = {"score", "value", "result", "accuracy", "pass_rate"}
+
+    # Detect long format: has a model column AND a score column.
+    model_col = next((f for f in fieldnames if f.lower() in _MODEL_COL_ALIASES), None)
+    score_col = next((f for f in fieldnames if f.lower() in _SCORE_COL_ALIASES), None)
+
+    if model_col and score_col:
+        # Long format: collect scores per model.
+        from ..adapters.common import coerce_score
+        collected: dict[str, list[float]] = {}
+        for row in reader:
+            m = str(row[model_col]).strip()
+            try:
+                s = coerce_score(row[score_col])
+            except ValueError:
+                continue
+            collected.setdefault(m, []).append(s)
+
+        models_in_file = list(collected.keys())
+        if model_a is None and model_b is None:
+            if len(models_in_file) < 2:
+                raise ValueError(
+                    "Run-level long CSV must contain scores for at least two models; "
+                    f"found: {models_in_file!r}."
+                )
+            model_a, model_b = models_in_file[0], models_in_file[1]
+        elif model_a is None or model_b is None:
+            raise ValueError("Supply both --model-a and --model-b or neither.")
+        for m in (model_a, model_b):
+            if m not in collected:
+                raise ValueError(
+                    f"Model {m!r} not found in long CSV; "
+                    f"available: {models_in_file!r}."
+                )
+        scores_a = np.array(collected[model_a], dtype=float)
+        scores_b = np.array(collected[model_b], dtype=float)
+        return RunLevelData(
+            model_a=model_a, model_b=model_b,
+            scores_a=scores_a, scores_b=scores_b,
+            source_format="run_level_csv_long",
+        )
+
+    # Wide format: each column is a model (excluding meta columns).
+    model_cols = [f for f in fieldnames if f.lower() not in _META_COLS]
+    if len(model_cols) < 2:
+        raise ValueError(
+            f"Wide run-level CSV must have at least two model columns; "
+            f"found columns: {fieldnames!r}."
+        )
+    if model_a is None and model_b is None:
+        model_a, model_b = model_cols[0], model_cols[1]
+    elif model_a is None or model_b is None:
+        raise ValueError("Supply both --model-a and --model-b or neither.")
+    for m in (model_a, model_b):
+        if m not in model_cols:
+            raise ValueError(
+                f"Model column {m!r} not found in wide CSV; "
+                f"available model columns: {model_cols!r}."
+            )
+
+    from ..adapters.common import coerce_score
+    a_vals, b_vals = [], []
+    for row in reader:
+        # Parse both scores before appending either one so a parse failure on
+        # column B does not leave a half-ingested A value. Also validate that
+        # b_vals is non-empty so a totally unreadable B column is caught here.
+        try:
+            a_val = coerce_score(row[model_a])
+            b_val = coerce_score(row[model_b])
+        except (ValueError, KeyError):
+            continue
+        a_vals.append(a_val)
+        b_vals.append(b_val)
+
+    if not a_vals or not b_vals:
+        raise ValueError(f"No readable score rows found in '{p.name}'.")
+
+    scores_a = np.array(a_vals, dtype=float)
+    scores_b = np.array(b_vals, dtype=float)
+    return RunLevelData(
+        model_a=model_a, model_b=model_b,
+        scores_a=scores_a, scores_b=scores_b,
+        source_format="run_level_csv_wide",
+    )
