@@ -172,7 +172,7 @@ def test_paired_path_still_works():
                     source_format="test", metadata={})
     findings = audit_statistical_validity(data, "A", "B", seed=0)
     assert {f.details["check"] for f in findings} == {
-        "decision", "effect_size", "precision"
+        "decision", "effect_size", "p_a_gt_b", "precision"
     }
     # None of the paired findings should carry the two-sample path marker.
     for f in findings:

@@ -30,10 +30,10 @@ def by_check(findings, check):
     return f
 
 
-def test_produces_three_checks():
+def test_produces_four_checks():
     findings = audit_statistical_validity(make_data([0] * 50, [1] * 50), "A", "B")
     assert {f.details["check"] for f in findings} == {
-        "decision", "effect_size", "precision"}
+        "decision", "effect_size", "p_a_gt_b", "precision"}
 
 
 def test_clean_win_is_a_significant_improvement():
@@ -332,7 +332,7 @@ def _unclustered_eval(n=50, effect=0.3):
 def test_clustered_audit_runs_without_error():
     data = _clustered_eval()
     findings = audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0)
-    assert len(findings) == 3
+    assert len(findings) == 4
 
 
 def test_clustered_audit_uses_cluster_test_name():

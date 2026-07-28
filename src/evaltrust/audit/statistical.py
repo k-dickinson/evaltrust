@@ -16,7 +16,7 @@ from ..stats.effect import (
     cohens_h,
     magnitude_label,
 )
-from ..stats.paired import mcnemar_exact
+from ..stats.paired import mcnemar_exact, paired_p_a_gt_b
 from ..stats.power import minimum_detectable_effect, required_n
 from ..stats.resampling import (
     bootstrap_ci,
@@ -132,6 +132,8 @@ def audit_statistical_validity(
                   equivalence_margin, leader, trailer),
         _effect_size(data, diffs, binary, leader, trailer,
                      confidence, n_resamples, seed),
+        _p_a_gt_b(diffs, model_a, model_b, leader, confidence,
+                  n_resamples, seed),
         _precision(outcome, n, alpha, power_target, smallest_meaningful_effect),
     ]
 
@@ -264,6 +266,57 @@ def _effect_size(data, diffs, binary, leader, trailer,
             "Gap may be too small to matter. Weigh it against cost and risk."
         ),
         details=details,
+    )
+
+
+def _p_a_gt_b(diffs, model_a, model_b, leader, confidence, n_resamples, seed) -> Finding:
+    """Headline P(A > B) with a bootstrap CI."""
+    conf_pct = f"{confidence * 100:g}"
+    p_hat = paired_p_a_gt_b(diffs)
+
+    lo, hi = bootstrap_statistic_ci(
+        diffs, paired_p_a_gt_b,
+        confidence=confidence, n_resamples=n_resamples, seed=seed,
+    )
+
+    # Orient toward leader: P(leader > trailer)
+    if p_hat >= 0.5:
+        p_leader = p_hat
+        ci_lo, ci_hi = lo, hi
+        a_label, b_label = model_a, model_b
+    else:
+        p_leader = 1.0 - p_hat
+        ci_lo, ci_hi = 1.0 - hi, 1.0 - lo
+        a_label, b_label = model_b, model_a
+
+    ci_str = f"[{ci_lo:.3f}, {ci_hi:.3f}]"
+    title = f"P({a_label} > {b_label}) = {p_leader:.1%}"
+    how = (
+        f"P({model_a} > {model_b}) = {p_hat:.3f} with {conf_pct}% "
+        f"CI {ci_str} across {diffs.size} paired examples "
+        f"(ties counted as 0.5)."
+    )
+
+    return Finding(
+        pillar=PILLAR,
+        title=title,
+        status=Status.PASS,
+        why=(
+            "The p-value tests whether a gap exists; P(A > B) answers how "
+            "likely A is to beat B on a randomly chosen example — the single "
+            "most interpretable summary of a distribution comparison."
+        ),
+        how_detected=how,
+        how_to_fix="Use this probability as a headline alongside the significance test.",
+        details={
+            "check": "p_a_gt_b",
+            "p_a_gt_b": p_hat,
+            "ci_low": lo,
+            "ci_high": hi,
+            "p_leader_gt_trailer": p_leader,
+            "ci_low_leader": ci_lo,
+            "ci_high_leader": ci_hi,
+        },
     )
 
 

@@ -139,9 +139,10 @@ def test_default_output_is_unchanged_and_flag_adds_one_finding_in_order():
     ]
     assert enabled_without_bayesian == [finding.to_dict() for finding in default.findings]
     assert len(enabled.findings) == len(default.findings) + 1
-    assert [finding.details.get("check") for finding in enabled.findings[:4]] == [
+    assert [finding.details.get("check") for finding in enabled.findings[:5]] == [
         "decision",
         "effect_size",
+        "p_a_gt_b",
         "precision",
         "bayesian_win_probability",
     ]
