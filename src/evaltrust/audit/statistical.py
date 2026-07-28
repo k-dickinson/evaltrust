@@ -137,7 +137,7 @@ def audit_statistical_validity(
         _effect_size(data, diffs, binary, leader, trailer,
                      confidence, n_resamples, seed),
         _p_a_gt_b(raw, model_a, model_b, leader, confidence,
-                  n_resamples, seed),
+                  n_resamples, seed, clustered=clustered),
         _precision(outcome, n, alpha, power_target, smallest_meaningful_effect),
     ]
 
@@ -273,7 +273,8 @@ def _effect_size(data, diffs, binary, leader, trailer,
     )
 
 
-def _p_a_gt_b(raw, model_a, model_b, leader, confidence, n_resamples, seed) -> Finding:
+def _p_a_gt_b(raw, model_a, model_b, leader, confidence, n_resamples, seed,
+              *, clustered: bool = False) -> Finding:
     """Headline P(A > B) with a bootstrap CI.
 
     Takes ``raw`` (``score_b - score_a``) rather than the leader-oriented
@@ -298,11 +299,22 @@ def _p_a_gt_b(raw, model_a, model_b, leader, confidence, n_resamples, seed) -> F
         p_leader, ci_lo, ci_hi = 1.0 - p_hat, 1.0 - hi, 1.0 - lo
         a_label, b_label = model_b, model_a
 
+    # The bootstrap resamples individual examples. On clustered data that
+    # understates between-cluster variance and the interval comes out too
+    # narrow, so say so rather than quietly over-claiming precision — the same
+    # disclosure the decision finding already makes for McNemar.
+    ci_caveat = (
+        " The interval resamples individual examples, so it does not yet "
+        "account for within-cluster correlation and is likely narrower than "
+        "it should be."
+        if clustered
+        else ""
+    )
     title = f"P({a_label} > {b_label}) = {p_leader:.1%}"
     how = (
         f"P({model_a} > {model_b}) = {p_hat:.3f} with {conf_pct}% "
         f"CI [{lo:.3f}, {hi:.3f}] across {raw.size} paired examples "
-        f"(ties counted as 0.5)."
+        f"(ties counted as 0.5).{ci_caveat}"
     )
 
     return Finding(
@@ -324,6 +336,7 @@ def _p_a_gt_b(raw, model_a, model_b, leader, confidence, n_resamples, seed) -> F
             "p_leader_gt_trailer": p_leader,
             "ci_low_leader": ci_lo,
             "ci_high_leader": ci_hi,
+            "ci_cluster_aware": not clustered,
         },
     )
 

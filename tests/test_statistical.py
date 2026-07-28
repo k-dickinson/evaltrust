@@ -458,3 +458,22 @@ def test_clustered_ci_same_sign_and_wider_than_unclustered():
     assert width_c > width_u, (
         f"Clustered CI width {width_c:.4f} should exceed unclustered {width_u:.4f}"
     )
+
+
+def test_p_a_gt_b_discloses_that_its_ci_is_not_cluster_aware():
+    """The bootstrap resamples examples, not clusters, so on clustered data the
+    interval is too narrow. Say so rather than over-claim, matching the disclosure
+    the decision finding already makes for McNemar."""
+    data = _clustered_eval()
+    f = by_check(
+        audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0), "p_a_gt_b")
+    assert f.details["ci_cluster_aware"] is False
+    assert "within-cluster correlation" in f.how_detected
+
+
+def test_p_a_gt_b_makes_no_cluster_caveat_on_unclustered_data():
+    data = _unclustered_eval()
+    f = by_check(
+        audit_statistical_validity(data, "A", "B", n_resamples=500, seed=0), "p_a_gt_b")
+    assert f.details["ci_cluster_aware"] is True
+    assert "within-cluster" not in f.how_detected
