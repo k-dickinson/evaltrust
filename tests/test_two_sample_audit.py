@@ -125,6 +125,33 @@ def test_effect_size_details_have_descriptive_stats():
     assert effect.details["mean_b"] == pytest.approx(np.mean(b), abs=1e-6)
 
 
+def test_effect_size_skips_a_definitive_label_with_one_run_per_model():
+    from evaltrust.audit.verdict import compute_verdict
+
+    findings = audit_two_sample(make_run_level([0.9], [0.1]), seed=0)
+    effect = by_check(findings, "effect_size")
+
+    assert effect.status is Status.SKIP
+    assert effect.title == "Run-level effect size needs at least 2 runs per model"
+    assert "large" not in effect.title.lower()
+    assert "large" not in effect.how_detected.lower()
+    assert effect.details["effect_size_sufficient"] is False
+    assert effect.details["min_n_required"] == 2
+    assert effect.details["n_a"] == 1
+    assert effect.details["n_b"] == 1
+
+    # The insufficient effect state is advisory. Removing it entirely must
+    # leave the verdict level, summary, and drivers byte-for-byte unchanged.
+    without_effect = [
+        finding
+        for finding in findings
+        if finding.details.get("check") != "effect_size"
+    ]
+    assert compute_verdict(findings).to_dict() == compute_verdict(
+        without_effect
+    ).to_dict()
+
+
 # ---------------------------------------------------------------------------
 # precision finding
 # ---------------------------------------------------------------------------
