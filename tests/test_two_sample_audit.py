@@ -757,3 +757,105 @@ def test_run_level_html_explain_adds_detail_section(tmp_path):
     assert r.exit_code in (0, 1)
     content = open(out, encoding="utf-8").read()
     assert "detail" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# Reviewer fixes (PR #162 CodeRabbit comments)
+# ---------------------------------------------------------------------------
+
+def test_run_level_md_escapes_markdown_special_chars_in_model_name(tmp_path):
+    """Fix (Image 1 - Minor): model names with Markdown special chars must be escaped.
+
+    A model name like 'gpt-4[preview]' contains '[' and ']' which Markdown
+    interprets as a link label.  A name like '[text](url)' would render as an
+    actual hyperlink in a PR comment, the primary use case for --md.
+    The --md branch must escape these characters.
+    """
+    # Use a model name containing Markdown-special characters
+    rows = ["gpt-4[preview],claude-3_opus"] + ["0.82,0.62"] * 12
+    pf = tmp_path / "special_models.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # The raw unescaped bracket form must NOT appear (would create a link label)
+    assert "[preview]" not in r.output, (
+        "Square brackets in model name must be escaped in --md output; "
+        f"got:\n{r.output}"
+    )
+    # The backslash-escaped form must be present: gpt\-4\[preview\]
+    assert r"\[preview\]" in r.output, (
+        f"Expected escaped model name '\\[preview\\]' in --md output; got:\n{r.output}"
+    )
+
+
+def test_run_level_md_escapes_markdown_special_chars_in_finding_title(tmp_path):
+    """Fix (Image 1 - Minor): finding titles with Markdown-special chars must be escaped.
+
+    Finding titles can contain characters like '*', '_', '[', ']' which may
+    break Markdown formatting in a PR comment.
+    """
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # Verify no raw unescaped '[text](url)' pattern appears (linkification check)
+    import re
+    # A well-formed [label](url) Markdown link should not appear from finding titles
+    assert not re.search(r'\[(?!pass|warn|fail|skip)[^\]]+\]\([^)]+\)', r.output), (
+        "Finding titles must not accidentally create Markdown links"
+    )
+
+
+def test_run_level_plain_ascii_table_maps_both_curly_single_quotes(tmp_path):
+    """Fix (Image 2 - Major): U+2018 and U+2019 must both be mapped in _ASCII.
+
+    The original code had a duplicate dict key (two ASCII apostrophes 0x27)
+    so Python silently dropped one entry and neither U+2018 nor U+2019 was
+    actually mapped.  This test injects a finding title containing both
+    curly single quotes and verifies the --plain output contains only ASCII.
+    """
+    import unittest.mock as mock
+    from evaltrust.core.schema import Finding, Status
+
+    curly_title = "\u2018left\u2019 and \u2018right\u2019 curly quotes"
+
+    fake_finding = Finding(
+        pillar="Statistical Validity",
+        title=curly_title,
+        status=Status.PASS,
+        why="test",
+        how_detected="test",
+        how_to_fix="test",
+        details={"check": "decision", "comparison_path": "unpaired_two_sample"},
+    )
+
+    path = _rl_csv(tmp_path)
+    # Patch the name as it is bound in the cli module (already imported at the top)
+    with mock.patch("evaltrust.cli.audit_two_sample", return_value=[fake_finding]):
+        r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+
+    assert r.exit_code in (0, 1)
+    # U+2018 and U+2019 must NOT appear — they must have been translated to ASCII
+    assert "\u2018" not in r.output, (
+        "U+2018 (left single quote) must be translated to ASCII in --plain output"
+    )
+    assert "\u2019" not in r.output, (
+        "U+2019 (right single quote) must be translated to ASCII in --plain output"
+    )
+    # The content words must still be present (just with ASCII apostrophes now)
+    assert "left" in r.output and "right" in r.output
+
+
+def test_run_level_plain_ascii_translation_has_ten_distinct_keys():
+    """Fix (Image 2 - Major): the _ASCII maketrans must cover 10 distinct code points.
+
+    A duplicate dict key silently drops one entry.  We confirm the table has
+    exactly 10 keys covering: · – — • ● U+2018 U+2019 U+201C U+201D ×
+    """
+    t = str.maketrans({
+        "·": "-", "–": "-", "—": "-", "•": "*", "●": "*",
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "×": "x",
+    })
+    assert len(t) == 10, f"Expected 10 keys in _ASCII maketrans, got {len(t)}"
+    for cp in (0x00B7, 0x2013, 0x2014, 0x2022, 0x25CF,
+               0x2018, 0x2019, 0x201C, 0x201D, 0x00D7):
+        assert cp in t, f"U+{cp:04X} missing from _ASCII maketrans"

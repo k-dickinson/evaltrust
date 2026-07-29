@@ -219,12 +219,19 @@ def audit(
             typer.echo(json.dumps(report_dict, indent=2))
         elif md:
             # --md: proper Markdown for PR comments and docs.
+            # Model names and finding text may contain Markdown special characters
+            # ([ ] * _ ` backslash) that can break formatting or create unintended
+            # links in a PR comment — the primary use case for --md.
+            import re as _re
+            def _md_escape(s: str) -> str:
+                return _re.sub(r'([\\`*_{}\[\]()#+\-.!|])', r'\\\1', str(s))
+
             _MD_MARK = {"pass": "pass", "warn": "warn", "fail": "fail", "skip": "skip"}
             lines = [
                 "# EvalTrust",
                 "",
                 f"**Run-level two-sample audit: "
-                f"{rl_data.model_a} vs {rl_data.model_b} "
+                f"{_md_escape(rl_data.model_a)} vs {_md_escape(rl_data.model_b)} "
                 f"({rl_data.n_a} runs / {rl_data.n_b} runs)**",
                 "",
                 "### Statistical Validity",
@@ -232,22 +239,22 @@ def audit(
             ]
             for f in findings:
                 mark = _MD_MARK.get(f.status.value, f.status.value)
-                lines.append(f"- **[{mark}]** {f.title}")
+                lines.append(f"- **[{mark}]** {_md_escape(f.title)}")
             lines.append("")
             warn_fix = [f.how_to_fix for f in findings
                         if f.status.value in ("warn", "fail")]
             if warn_fix:
-                lines += ["## What to do", ""] + [f"- {x}" for x in warn_fix] + [""]
+                lines += ["## What to do", ""] + [f"- {_md_escape(x)}" for x in warn_fix] + [""]
             optional = [f.how_to_fix for f in findings if f.status.value == "skip"]
             if optional:
-                lines += ["## To check more", ""] + [f"- {x}" for x in optional] + [""]
+                lines += ["## To check more", ""] + [f"- {_md_escape(x)}" for x in optional] + [""]
             if explain:
                 lines += ["## Detail", ""]
                 for f in findings:
                     if f.status.value in ("warn", "fail", "skip"):
                         mark = _MD_MARK.get(f.status.value, f.status.value)
                         lines += [
-                            f"### [{mark}] {f.title}",
+                            f"### [{mark}] {_md_escape(f.title)}",
                             "",
                             f.why,
                             "",
@@ -260,7 +267,7 @@ def audit(
             _PLAIN_MARK = {"pass": "ok  ", "warn": "warn", "fail": "fail", "skip": "--  "}
             _ASCII = str.maketrans({
                 "·": "-", "–": "-", "—": "-", "•": "*", "●": "*",
-                "'": "'", "'": "'", "\u201c": '"', "\u201d": '"', "×": "x",
+                "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "×": "x",
             })
             lines = [
                 f"EvalTrust  Run-level two-sample audit: "
