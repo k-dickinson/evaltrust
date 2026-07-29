@@ -37,6 +37,7 @@ PILLAR = "Statistical Validity"
 
 # Minimum per-model run count below which precision is flagged as a warning.
 _MIN_RUNS_RECOMMENDED = 10
+_MIN_EFFECT_RUNS = 2
 
 
 def audit_two_sample(
@@ -249,6 +250,43 @@ def _effect_size(
     mean_a, mean_b = float(np.mean(a)), float(np.mean(b))
     std_a = float(np.std(a, ddof=1)) if a.size > 1 else 0.0
     std_b = float(np.std(b, ddof=1)) if b.size > 1 else 0.0
+
+    if min(a.size, b.size) < _MIN_EFFECT_RUNS:
+        return Finding(
+            pillar=PILLAR,
+            title="Run-level effect size needs at least 2 runs per model",
+            status=Status.SKIP,
+            why=(
+                "A run-level effect magnitude needs enough observations to "
+                "describe each model's variation. One run cannot provide a "
+                "sample variance."
+            ),
+            how_detected=(
+                f"{model_a} has {a.size} run{'s' if a.size != 1 else ''} and "
+                f"{model_b} has {b.size} run{'s' if b.size != 1 else ''}. "
+                "At least 2 runs per model are needed before reporting a "
+                "definitive effect-size label."
+            ),
+            how_to_fix=(
+                "Collect at least 2 runs per model before interpreting the "
+                "run-level effect magnitude."
+            ),
+            details={
+                "check": "effect_size",
+                "p_a_gt_b": p_hat,
+                "common_language_effect_size": cles,
+                "magnitude": None,
+                "mean_a": mean_a,
+                "mean_b": mean_b,
+                "std_a": std_a,
+                "std_b": std_b,
+                "effect_size_sufficient": False,
+                "min_n_required": _MIN_EFFECT_RUNS,
+                "n_a": int(a.size),
+                "n_b": int(b.size),
+                "comparison_path": "unpaired_two_sample",
+            },
+        )
 
     # Map CLES to a label (Vargha-Delaney A12 thresholds: 0.06 small, 0.14 medium, 0.21 large)
     if cles < 0.06:

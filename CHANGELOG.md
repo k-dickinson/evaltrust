@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Edge-case hardening.** Render zero-variance paired effects as unbounded, withhold run-level effect labels below two runs per model, and reject non-finite or boolean run-level JSON scores (#154).
 - **Opt-in predictive rerun audit wiring.** Added `--run-aware`, explicit `--future-runs`, eligibility SKIP counts, and an advisory normal-theory predictive finding without changing default output or the verdict (#131).
 - **Fixed-example predictive rerun statistics.** Added a deterministic
   Welch-Satterthwaite normal-theory approximation for independent run streams

@@ -11,7 +11,14 @@ import html as _html
 from ..audit.runner import AuditReport
 from ..audit.verdict import VerdictLevel
 from ..core.schema import Status
-from .terminal import _grouped, _others, _subtitle
+from .terminal import (
+    _detail_findings,
+    _display_how_detected,
+    _display_title,
+    _grouped,
+    _others,
+    _subtitle,
+)
 
 _STATUS_COLOR = {
     Status.PASS: "#22c55e",
@@ -95,7 +102,7 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
             p("<div class='finding'>")
             p(f"  <span class='badge' style='background:{fc}'>"
               f"{_STATUS_LABEL[f.status]}</span>")
-            p(f"  {_e(f.title)}")
+            p(f"  {_e(_display_title(f))}")
             p("</div>")
 
     todo = [f.how_to_fix for f in report.findings
@@ -114,7 +121,7 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
         p("</ul></div>")
 
     if explain:
-        flagged = [f for f in report.findings if f.status is not Status.PASS]
+        flagged = _detail_findings(report.findings)
         if flagged:
             p("<div class='detail'><h2>Detail</h2>")
             for f in flagged:
@@ -122,9 +129,9 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
                 p("<div class='detail-item'>")
                 p(f"  <div class='title'>"
                   f"<span class='badge' style='background:{fc}'>"
-                  f"{_STATUS_LABEL[f.status]}</span> {_e(f.title)}</div>")
+                  f"{_STATUS_LABEL[f.status]}</span> {_e(_display_title(f))}</div>")
                 p(f"  <div class='why'>{_e(f.why)}</div>")
-                p(f"  <div class='how'>{_e(f.how_detected)}</div>")
+                p(f"  <div class='how'>{_e(_display_how_detected(f))}</div>")
                 p("</div>")
             p("</div>")
 
