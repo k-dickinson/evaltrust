@@ -217,24 +217,79 @@ def audit(
 
         if as_json:
             typer.echo(json.dumps(report_dict, indent=2))
-        elif plain or md:
-            # --plain and --md emit the same plain-text summary (no colour, ASCII icons only).
-            _warn.print(
-                "[yellow]--md/--plain are not yet fully supported for --run-level "
-                "audits; printing the standard plain summary instead.[/yellow]"
-            )
-            icon_map = {"pass": "[PASS]", "warn": "[WARN]", "fail": "[FAIL]", "skip": "[SKIP]"}
-            typer.echo(
-                f"\nRun-level two-sample audit: "
-                f"{rl_data.model_a} vs {rl_data.model_b}  "
-                f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
-            )
+        elif md:
+            # --md: proper Markdown for PR comments and docs.
+            _MD_MARK = {"pass": "pass", "warn": "warn", "fail": "fail", "skip": "skip"}
+            lines = [
+                "# EvalTrust",
+                "",
+                f"**Run-level two-sample audit: "
+                f"{rl_data.model_a} vs {rl_data.model_b} "
+                f"({rl_data.n_a} runs / {rl_data.n_b} runs)**",
+                "",
+                "### Statistical Validity",
+                "",
+            ]
             for f in findings:
-                icon = icon_map.get(f.status.value, "[?]")
-                typer.echo(f"  {icon} {f.title}")
-                if explain:
-                    typer.echo(f"    {f.how_detected}")
-            typer.echo("")
+                mark = _MD_MARK.get(f.status.value, f.status.value)
+                lines.append(f"- **[{mark}]** {f.title}")
+            lines.append("")
+            warn_fix = [f.how_to_fix for f in findings
+                        if f.status.value in ("warn", "fail")]
+            if warn_fix:
+                lines += ["## What to do", ""] + [f"- {x}" for x in warn_fix] + [""]
+            optional = [f.how_to_fix for f in findings if f.status.value == "skip"]
+            if optional:
+                lines += ["## To check more", ""] + [f"- {x}" for x in optional] + [""]
+            if explain:
+                lines += ["## Detail", ""]
+                for f in findings:
+                    if f.status.value in ("warn", "fail", "skip"):
+                        mark = _MD_MARK.get(f.status.value, f.status.value)
+                        lines += [
+                            f"### [{mark}] {f.title}",
+                            "",
+                            f.why,
+                            "",
+                            f.how_detected,
+                            "",
+                        ]
+            typer.echo(("\n".join(lines).rstrip() + "\n"), nl=False)
+        elif plain:
+            # --plain: ASCII-only, no colour, safe for Windows / CI logs.
+            _PLAIN_MARK = {"pass": "ok  ", "warn": "warn", "fail": "fail", "skip": "--  "}
+            _ASCII = str.maketrans({
+                "·": "-", "–": "-", "—": "-", "•": "*", "●": "*",
+                "'": "'", "'": "'", "\u201c": '"', "\u201d": '"', "×": "x",
+            })
+            lines = [
+                f"EvalTrust  Run-level two-sample audit: "
+                f"{rl_data.model_a} vs {rl_data.model_b} "
+                f"({rl_data.n_a} runs / {rl_data.n_b} runs)",
+                "",
+                "Statistical Validity",
+            ]
+            for f in findings:
+                mark = _PLAIN_MARK.get(f.status.value, f.status.value)
+                lines.append(f"  [{mark}] {f.title}")
+            warn_fix = [f.how_to_fix for f in findings
+                        if f.status.value in ("warn", "fail")]
+            if warn_fix:
+                lines += ["", "What to do"] + [f"  - {x}" for x in warn_fix]
+            optional = [f.how_to_fix for f in findings if f.status.value == "skip"]
+            if optional:
+                lines += ["", "To check more"] + [f"  - {x}" for x in optional]
+            if explain:
+                lines += ["", "Detail"]
+                for f in findings:
+                    if f.status.value in ("warn", "fail", "skip"):
+                        mark = _PLAIN_MARK.get(f.status.value, f.status.value)
+                        lines += [
+                            f"  [{mark}] {f.title}",
+                            f"    {f.why}",
+                            f"    {f.how_detected}",
+                        ]
+            typer.echo(("\n".join(lines).rstrip() + "\n").translate(_ASCII), nl=False)
         else:
             # Model names and finding titles may contain square brackets
             # (e.g. "gpt-4[preview]") which Rich interprets as markup tags.
@@ -260,9 +315,94 @@ def audit(
             _con.print()
 
         if html_out is not None:
-            _warn.print(
-                "[yellow]--html is not yet supported for --run-level audits.[/yellow]"
+            import html as _html_mod
+            _STATUS_COLOR = {
+                "pass": "#22c55e", "warn": "#eab308",
+                "fail": "#ef4444", "skip": "#9ca3af",
+            }
+            _STATUS_LABEL = {
+                "pass": "PASS", "warn": "WARN", "fail": "FAIL", "skip": "SKIP",
+            }
+            _CSS = (
+                "body{font-family:system-ui,sans-serif;max-width:800px;"
+                "margin:2rem auto;padding:0 1rem;color:#1f2937}"
+                "h1{font-size:1.1rem;font-weight:600;margin-bottom:.25rem}"
+                ".subtitle{color:#6b7280;font-size:.9rem;margin-bottom:1.5rem}"
+                ".pillar{font-weight:600;margin-top:1.25rem;margin-bottom:.4rem}"
+                ".finding{display:flex;align-items:center;gap:.5rem;"
+                "margin:.2rem 0 .2rem 1rem;font-size:.95rem}"
+                ".badge{font-size:.75rem;font-weight:600;padding:.1rem .4rem;"
+                "border-radius:4px;color:#fff}"
+                ".todo{margin-top:1.5rem}"
+                ".todo h2{font-size:1rem;font-weight:600;margin-bottom:.5rem}"
+                ".todo ul{margin:0;padding-left:1.25rem}"
+                ".todo li{margin:.25rem 0;font-size:.95rem}"
+                ".detail{margin-top:1.5rem}"
+                ".detail h2{font-size:1rem;font-weight:600}"
+                ".detail-item{margin:1rem 0 0 1rem}"
+                ".detail-item .title{font-weight:600}"
+                ".detail-item .why,.detail-item .how{color:#6b7280;"
+                "font-size:.9rem;margin:.2rem 0}"
             )
+
+            def _e(s: object) -> str:
+                return _html_mod.escape(str(s))
+
+            parts: list[str] = ["<!DOCTYPE html>", "<html lang='en'><head>",
+                                 "<meta charset='utf-8'>",
+                                 "<meta name='viewport' "
+                                 "content='width=device-width,initial-scale=1'>",
+                                 f"<title>EvalTrust \u2014 Run-level: "
+                                 f"{_e(rl_data.model_a)} vs "
+                                 f"{_e(rl_data.model_b)}</title>",
+                                 f"<style>{_CSS}</style>",
+                                 "</head><body>",
+                                 "<h1>EvalTrust</h1>",
+                                 f"<div class='subtitle'>Run-level two-sample audit: "
+                                 f"{_e(rl_data.model_a)} vs {_e(rl_data.model_b)} "
+                                 f"({rl_data.n_a} runs / {rl_data.n_b} runs)</div>",
+                                 "<div class='pillar'>Statistical Validity</div>"]
+            for f in findings:
+                fc = _STATUS_COLOR.get(f.status.value, "#9ca3af")
+                fl = _STATUS_LABEL.get(f.status.value, f.status.value.upper())
+                parts += [
+                    "<div class='finding'>",
+                    f"  <span class='badge' style='background:{fc}'>{fl}</span>",
+                    f"  {_e(f.title)}",
+                    "</div>",
+                ]
+            todo = [f.how_to_fix for f in findings
+                    if f.status.value in ("warn", "fail")]
+            if todo:
+                parts += ["<div class='todo'><h2>What to do</h2><ul>"]
+                for item in todo:
+                    parts.append(f"  <li>{_e(item)}</li>")
+                parts.append("</ul></div>")
+            optional = [f.how_to_fix for f in findings if f.status.value == "skip"]
+            if optional:
+                parts += ["<div class='todo'><h2>To check more</h2><ul>"]
+                for item in optional:
+                    parts.append(f"  <li>{_e(item)}</li>")
+                parts.append("</ul></div>")
+            if explain:
+                flagged = [f for f in findings if f.status.value in ("warn", "fail", "skip")]
+                if flagged:
+                    parts.append("<div class='detail'><h2>Detail</h2>")
+                    for f in flagged:
+                        fc = _STATUS_COLOR.get(f.status.value, "#9ca3af")
+                        fl = _STATUS_LABEL.get(f.status.value, f.status.value.upper())
+                        parts += [
+                            "<div class='detail-item'>",
+                            f"  <div class='title'>"
+                            f"<span class='badge' style='background:{fc}'>{fl}</span>"
+                            f" {_e(f.title)}</div>",
+                            f"  <div class='why'>{_e(f.why)}</div>",
+                            f"  <div class='how'>{_e(f.how_detected)}</div>",
+                            "</div>",
+                        ]
+                    parts.append("</div>")
+            parts.append("</body></html>")
+            Path(html_out).write_text("\n".join(parts), encoding="utf-8")
 
         # Exit code: fail if --strict or --fail-under and worst finding is bad.
         worst_status = max(

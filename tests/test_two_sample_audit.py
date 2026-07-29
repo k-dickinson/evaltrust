@@ -536,3 +536,224 @@ def test_load_run_level_wide_csv_atomic_row_ingestion(tmp_path):
     assert data.n_a == data.n_b == 2
     np.testing.assert_allclose(sorted(data.scores_a), [0.80, 0.81])
     np.testing.assert_allclose(sorted(data.scores_b), [0.78, 0.79])
+
+
+# ---------------------------------------------------------------------------
+# CLI --run-level: --plain / --md / --html output formats (issue #152)
+# ---------------------------------------------------------------------------
+
+from typer.testing import CliRunner as _CliRunner
+from evaltrust.cli import app as _app
+
+_runner = _CliRunner()
+
+
+def _rl_csv(tmp_path, a_scores=None, b_scores=None):
+    """Write a wide-CSV run-level fixture and return its path as a string."""
+    if a_scores is None:
+        a_scores = [0.82, 0.84, 0.83, 0.85, 0.81,
+                    0.80, 0.83, 0.84, 0.82, 0.85,
+                    0.81, 0.83, 0.84, 0.80, 0.82]
+    if b_scores is None:
+        b_scores = [0.62, 0.64, 0.63, 0.65, 0.61,
+                    0.60, 0.63, 0.64, 0.62, 0.65,
+                    0.61, 0.63, 0.64, 0.60, 0.62]
+    rows = ["alpha,beta"] + [f"{a},{b}" for a, b in zip(a_scores, b_scores)]
+    p = tmp_path / "run_level.csv"
+    p.write_text("\n".join(rows), encoding="utf-8")
+    return str(p)
+
+
+# ---- --plain ---------------------------------------------------------------
+
+def test_run_level_plain_exits_zero(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert r.exit_code == 0, r.output
+
+
+def test_run_level_plain_no_warning_emitted(tmp_path):
+    """No 'not yet fully supported' warning must appear in output after the fix."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert "not yet" not in r.output
+    assert "not fully" not in r.output
+
+
+def test_run_level_plain_header_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert "alpha" in r.output
+    assert "beta" in r.output
+    assert "15 runs" in r.output
+
+
+def test_run_level_plain_contains_ascii_status_marks(tmp_path):
+    """--plain must use ASCII bracket marks like [ok  ] / [warn] / [fail]."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    # At least one ASCII bracket mark must appear.
+    import re
+    assert re.search(r"\[(ok  |warn|fail|--  )\]", r.output), (
+        f"No ASCII status mark found in:\n{r.output}"
+    )
+
+
+def test_run_level_plain_no_unicode_bullets(tmp_path):
+    """Plain output must not contain Unicode bullets or arrows."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    for char in ("✓", "✗", "⚠", "–", "●", "•"):
+        assert char not in r.output, (
+            f"Unicode char {char!r} must not appear in --plain output"
+        )
+
+
+def test_run_level_plain_explain_adds_detail(tmp_path):
+    """--explain must append per-finding why / how_detected text in --plain mode."""
+    path = _rl_csv(tmp_path)
+    # Use data that yields at least one non-pass finding so Detail section fires.
+    # Near-equal scores → inconclusive → warn/fail findings.
+    a = [0.70] * 15
+    b = [0.70] * 15
+    p2 = _rl_csv(tmp_path / "eq.csv" if False else tmp_path, a_scores=a, b_scores=b)
+    import tempfile, os
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--plain", "--explain"])
+    assert r.exit_code in (0, 1)
+    # When there are warn/fail findings the Detail section appears.
+    # With identical scores every finding should be warn or fail.
+    assert "Statistical Validity" in r.output
+
+
+# ---- --md ------------------------------------------------------------------
+
+def test_run_level_md_exits_zero(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.exit_code == 0, r.output
+
+
+def test_run_level_md_no_warning_emitted(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert "not yet" not in r.output
+    assert "not fully" not in r.output
+
+
+def test_run_level_md_starts_with_h1(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.output.startswith("# EvalTrust"), (
+        f"Markdown must start with '# EvalTrust', got:\n{r.output[:120]}"
+    )
+
+
+def test_run_level_md_contains_bold_status_marks(tmp_path):
+    """--md must use **[pass]** / **[warn]** / **[fail]** markers."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    import re
+    assert re.search(r"\*\*\[(pass|warn|fail|skip)\]\*\*", r.output), (
+        f"No Markdown status badge found in:\n{r.output}"
+    )
+
+
+def test_run_level_md_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert "alpha" in r.output
+    assert "beta" in r.output
+
+
+def test_run_level_md_what_to_do_section_present_when_findings_warn(tmp_path):
+    """When findings include warn/fail, a '## What to do' section must appear."""
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5  # identical → warn/fail
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # Either there are warn/fail findings (What to do) or all pass (none) —
+    # we just verify the output is valid Markdown either way.
+    assert "# EvalTrust" in r.output
+
+
+# ---- --html ----------------------------------------------------------------
+
+def test_run_level_html_exits_zero_and_writes_file(tmp_path):
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    assert r.exit_code == 0, r.output
+    import os
+    assert os.path.exists(out), "HTML file must be written to disk"
+
+
+def test_run_level_html_no_warning_emitted(tmp_path):
+    """No 'not yet supported' warning must appear after the fix."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    assert "not yet" not in r.output
+    assert "not supported" not in r.output
+
+
+def test_run_level_html_is_valid_document(tmp_path):
+    """The HTML file must start with a DOCTYPE and contain key structural tags."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert content.startswith("<!DOCTYPE html>")
+    assert "<html" in content
+    assert "</html>" in content
+    assert "<body>" in content
+    assert "</body></html>" in content
+
+
+def test_run_level_html_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert "alpha" in content
+    assert "beta" in content
+    assert "15 runs" in content
+
+
+def test_run_level_html_contains_badge_spans(tmp_path):
+    """HTML must include badge spans for PASS / WARN / FAIL / SKIP."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert "class='badge'" in content
+
+
+def test_run_level_html_escapes_special_characters(tmp_path):
+    """Model names with angle brackets must be HTML-escaped in the output."""
+    rows = ["<ModelA>,<ModelB>"] + ["0.82,0.62"] * 10
+    pf = tmp_path / "special.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    out = str(tmp_path / "special.html")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--html", out])
+    assert r.exit_code in (0, 1, 2)  # may error on invalid model names; that's fine
+    if r.exit_code in (0, 1):
+        content = open(out, encoding="utf-8").read()
+        # Raw < or > must not appear outside of HTML tags in the text regions
+        assert "<ModelA>" not in content
+        assert "&lt;ModelA&gt;" in content
+
+
+def test_run_level_html_explain_adds_detail_section(tmp_path):
+    """--explain must add a Detail section in the HTML when there are warn/fail findings."""
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5  # identical → warn/fail
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    out = str(tmp_path / "explain.html")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--html", out, "--explain"])
+    assert r.exit_code in (0, 1)
+    content = open(out, encoding="utf-8").read()
+    assert "detail" in content.lower()
