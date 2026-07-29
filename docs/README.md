@@ -10,6 +10,8 @@ that tell you whether to believe it, before you ship on a gap that might be luck
   fit together.
 - [**Checks and methods**](checks.md) - every check, its statistical method, and
   its thresholds.
+- [**Run-aware predictive reruns**](run-aware.md) - enable the advisory finding
+  and read its probability, eligibility counts, and limits.
 - [**Normal-theory predictive reruns**](predictive-rerun.md) - the fixed-example
   rerun target, model assumptions, output semantics, and measured limitations.
 - [**Integrations**](integrations.md) - using EvalTrust standalone, embedded in
