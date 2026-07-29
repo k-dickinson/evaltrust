@@ -6,7 +6,8 @@ finding is advisory and does not change the audit verdict.
 
 Examples used by the finding need per-example `runs` for both models. See
 [Input formats](input-formats.md#nested-json) for the nested JSON shape. For an
-example to be used, each stored score must equal the mean of its run values.
+example to be used, each stored score must match the mean of its run values
+under `numpy.isclose` with `rtol=1e-10` and `atol=1e-12`.
 
 ## Enable the finding
 
