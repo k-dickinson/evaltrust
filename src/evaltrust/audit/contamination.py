@@ -65,11 +65,29 @@ def _find_near_matches(benchmark: list[str], reference: list[str], exact_matches
 def run_contamination_audit(
     benchmark: list[str],
     reference: list[str],
+    threshold: float = 0.85,
 ) -> ContaminationResult:
-    """Check for contamination between a benchmark and a reference set."""
+    """Check for contamination between a benchmark and a reference set.
 
+    Parameters
+    ----------
+    benchmark:
+        The benchmark prompts/examples to audit.
+    reference:
+        The reference corpus to check against.
+    threshold:
+        Similarity threshold for near-match detection, in [0, 1] (default 0.85).
+        A value of 1.0 only flags exact matches.
+    """
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(
+            f"threshold must be in [0, 1]; got {threshold!r}. "
+            "Values below 0 flag everything as a near-match; "
+            "values above 1 silently suppress all near-match detection."
+        )
     exact_matches = _find_exact_matches(benchmark, reference)
-    near_matches_indices = _find_near_matches(benchmark, reference, exact_matches)
+    near_matches_indices = _find_near_matches(benchmark, reference, exact_matches,
+                                              threshold=threshold)
 
     total_items = len(benchmark)
 
