@@ -49,6 +49,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `toxicity/v1`, plus bare `token_count`/`latency`) fans out into its own metric
   in the suite. One model per run; compare two runs. Closes #11.
 
+### Removed
+- **`metric_weights` config key.** The key was validated and stored but never
+  used in the rollup. A config that still sets it now goes through the standard
+  unknown-key handling: an explicit `--config` file errors, a discovered
+  `.evaltrust.toml` or `[tool.evaltrust]` table warns and ignores it. The
+  `applied_weights` key in suite JSON remains, always empty, so the payload
+  shape is unchanged (#153).
+
 ## [0.7.0] — 2026-07-17
 - **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file
   has three or more scored models, the audit reports an advisory bootstrap

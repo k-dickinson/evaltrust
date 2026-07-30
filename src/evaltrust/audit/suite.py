@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace
-from types import MappingProxyType
 
 import numpy as np
 
@@ -35,8 +34,6 @@ class SuiteReport:
     metric_alphas: "OrderedDict[str, float]" = field(default_factory=OrderedDict)
     adjusted_p: "OrderedDict[str, float]" = field(default_factory=OrderedDict)
     _config_gated: frozenset = field(default_factory=frozenset, compare=False, repr=False)
-    _config_weights: "dict | MappingProxyType" = field(
-        default_factory=dict, compare=False, repr=False)
 
     @property
     def overall_level(self) -> VerdictLevel:
@@ -50,10 +47,6 @@ class SuiteReport:
 
         Only named metrics present in the suite are considered; unknown gate
         names are silently ignored.
-
-        Note: ``_config_weights`` is validated and stored but not yet used in
-        rollup — weighting changes the ``--fail-under`` contract and will land
-        in a follow-up PR once that contract is settled.
         """
         levels = {m: r.verdict.level for m, r in self.reports.items()}
 
@@ -83,9 +76,12 @@ class SuiteReport:
             "adjusted_p": dict(self.adjusted_p),
             "metrics": {m: r.to_dict() for m, r in self.reports.items()},
             # Surface the applied policy so downstream JSON consumers know which
-            # gates and weights produced this overall_level.
+            # gates produced this overall_level.
             "applied_gates": sorted(self._config_gated),
-            "applied_weights": dict(self._config_weights),
+            # metric_weights was removed from the config (#153). The key stays
+            # so the payload shape is unchanged under SCHEMA_VERSION 1.0; no
+            # weights can ever be applied, so it is always empty.
+            "applied_weights": {},
         }
 
 
@@ -218,8 +214,7 @@ def _uncorrected_suite(suite, model_a, model_b, cfg, single: bool) -> SuiteRepor
     description = "none (single metric)" if single else "none (uncorrected)"
     return SuiteReport(reports=reports, alpha=cfg.alpha, corrected_alpha=cfg.alpha,
                        correction=description, metric_alphas=metric_alphas,
-                       adjusted_p=adjusted_p, _config_gated=cfg.gated_metrics,
-                       _config_weights=cfg.metric_weights)
+                       adjusted_p=adjusted_p, _config_gated=cfg.gated_metrics)
 
 
 def _bonferroni_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
@@ -234,8 +229,7 @@ def _bonferroni_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
     return SuiteReport(reports=reports, alpha=cfg.alpha,
                        corrected_alpha=corrected_alpha, correction=description,
                        metric_alphas=metric_alphas, adjusted_p=adjusted_p,
-                       _config_gated=cfg.gated_metrics,
-                       _config_weights=cfg.metric_weights)
+                       _config_gated=cfg.gated_metrics)
 
 
 def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
@@ -267,8 +261,7 @@ def _holm_suite(suite, model_a, model_b, cfg, k: int) -> SuiteReport:
     return SuiteReport(reports=reports, alpha=cfg.alpha,
                        corrected_alpha=corrected_alpha, correction=description,
                        metric_alphas=metric_alphas, adjusted_p=adjusted_p,
-                       _config_gated=cfg.gated_metrics,
-                       _config_weights=cfg.metric_weights)
+                       _config_gated=cfg.gated_metrics)
 
 
 def _holm_step_thresholds(pvalues, rejected, alpha: float) -> list[float]:
