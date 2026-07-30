@@ -763,13 +763,17 @@ def test_run_level_html_explain_adds_detail_section(tmp_path):
 # Reviewer fixes (PR #162 CodeRabbit comments)
 # ---------------------------------------------------------------------------
 
-def test_run_level_md_escapes_markdown_special_chars_in_model_name(tmp_path):
-    """Fix (Image 1 - Minor): model names with Markdown special chars must be escaped.
+def test_run_level_md_escapes_markdown_special_chars_in_subtitle(tmp_path):
+    """Fix (Image 1 - Minor): model names in the subtitle must be Markdown-escaped.
 
-    A model name like 'gpt-4[preview]' contains '[' and ']' which Markdown
-    interprets as a link label.  A name like '[text](url)' would render as an
-    actual hyperlink in a PR comment, the primary use case for --md.
-    The --md branch must escape these characters.
+    The subtitle line ``**model_a vs model_b · N runs / M runs**`` is user-controlled.
+    A model name like ``gpt-4[preview]`` contains ``[`` and ``]`` which Markdown
+    interprets as a link label; a name shaped like ``[text](url)`` renders as an
+    actual hyperlink in a PR comment — the primary use case for ``--md``.
+
+    Note: finding *titles* are library-authored strings and are deliberately left
+    unescaped so they render verbatim (e.g. parentheses and dots in statistical
+    notation must not be backslash-escaped).
     """
     # Use a model name containing Markdown-special characters
     rows = ["gpt-4[preview],claude-3_opus"] + ["0.82,0.62"] * 12
@@ -777,14 +781,16 @@ def test_run_level_md_escapes_markdown_special_chars_in_model_name(tmp_path):
     pf.write_text("\n".join(rows), encoding="utf-8")
     r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--md"])
     assert r.exit_code in (0, 1)
-    # The raw unescaped bracket form must NOT appear (would create a link label)
-    assert "[preview]" not in r.output, (
-        "Square brackets in model name must be escaped in --md output; "
-        f"got:\n{r.output}"
-    )
-    # The backslash-escaped form must be present: gpt\-4\[preview\]
+    # The subtitle bold line must escape the brackets
     assert r"\[preview\]" in r.output, (
-        f"Expected escaped model name '\\[preview\\]' in --md output; got:\n{r.output}"
+        f"Expected escaped subtitle '\\[preview\\]' in --md output; got:\n{r.output}"
+    )
+    # Specifically the **subtitle** line must be escaped (first occurrence = subtitle)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    assert r"\[preview\]" in bold_line, (
+        f"Subtitle bold line must contain escaped brackets; got: {bold_line!r}"
     )
 
 
