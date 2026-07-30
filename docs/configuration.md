@@ -53,6 +53,7 @@ saturation_fraction = 0.9
 | `correction` | `"bonferroni"` | Multiple-comparison correction for a multi-metric suite or an enabled all-pairs family: `bonferroni`, `holm`, or `none`. |
 | `all_pairs` | `false` | Also test every declared model pair (`--all-pairs`). Off by default. |
 | `bayesian` | `false` | Add an advisory Bayesian win-probability finding (`--bayesian`). Off by default; never changes the verdict. |
+| `win_rate` | `false` | Add the advisory all-example paired win rate with half credit for exact ties and a percentile-bootstrap interval (`--win-rate`). Off by default; never changes the verdict. |
 | `run_aware` | `false` | Add the advisory fixed-example predictive rerun finding (`--run-aware`). Off by default; never changes the existing inference or verdict. See the [predictive rerun method](predictive-rerun.md). |
 | `run_aware_future_runs` | *(none)* | Required positive future run count when `run_aware` is enabled (`--future-runs`). It is never inferred from observed run counts. |
 | `gated_metrics` | *(none)* | Metric names that must reach High confidence, or the whole suite is Low regardless of the other metrics. |

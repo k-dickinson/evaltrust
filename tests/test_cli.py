@@ -254,6 +254,85 @@ def _has_bayesian_finding(stdout):
     )
 
 
+def _has_win_rate_finding(stdout):
+    payload = json.loads(stdout)
+    return any(
+        finding["details"].get("check") == "paired_win_rate"
+        for finding in payload["findings"]
+    )
+
+
+def test_win_rate_flag_enables_the_optional_finding(tmp_path):
+    result = runner.invoke(
+        app, ["audit", clean_win_file(tmp_path), "--win-rate", "--json"]
+    )
+    assert result.exit_code == 0
+    assert _has_win_rate_finding(result.stdout)
+
+
+def test_win_rate_is_off_by_default_in_cli(tmp_path):
+    result = runner.invoke(app, ["audit", clean_win_file(tmp_path), "--json"])
+    assert result.exit_code == 0
+    assert not _has_win_rate_finding(result.stdout)
+
+
+def test_omitted_win_rate_flag_preserves_config_true(tmp_path):
+    policy = tmp_path / "win-rate.toml"
+    policy.write_text("win_rate = true\n")
+    result = runner.invoke(
+        app,
+        ["audit", clean_win_file(tmp_path), "--config", str(policy), "--json"],
+    )
+    assert result.exit_code == 0
+    assert _has_win_rate_finding(result.stdout)
+
+
+def test_no_win_rate_overrides_config_true(tmp_path):
+    policy = tmp_path / "win-rate.toml"
+    policy.write_text("win_rate = true\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            clean_win_file(tmp_path),
+            "--config",
+            str(policy),
+            "--no-win-rate",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert not _has_win_rate_finding(result.stdout)
+
+
+def test_win_rate_flag_overrides_config_false(tmp_path):
+    policy = tmp_path / "win-rate.toml"
+    policy.write_text("win_rate = false\n")
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            clean_win_file(tmp_path),
+            "--config",
+            str(policy),
+            "--win-rate",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert _has_win_rate_finding(result.stdout)
+
+
+def test_win_rate_help_names_the_event_and_tie_policy():
+    result = runner.invoke(app, ["audit", "--help"], color=False)
+    help_text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout)
+
+    assert result.exit_code == 0
+    assert "--win-rate" in help_text
+    assert "scores higher" in help_text
+    assert "ties half credit" in help_text
+
+
 def run_aware_file(tmp_path):
     raw = {
         "models": ["A", "B"],

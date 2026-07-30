@@ -72,6 +72,7 @@ class AuditConfig:
     n_resamples: int = 10_000               # bootstrap / permutation resamples
     seed: int = 0                           # RNG seed (reproducibility)
     bayesian: bool = False                  # optional Bayesian paired-comparison view
+    win_rate: bool = False                  # optional all-example paired win-rate view
     run_aware: bool = False                 # optional fixed-example predictive rerun view
     run_aware_future_runs: int | None = None  # explicit future runs for that view
     correction: str = "bonferroni"          # family correction: bonferroni | holm | none
@@ -139,6 +140,7 @@ class AuditConfig:
             self.n_resamples,
             self.seed,
             self.bayesian,
+            self.win_rate,
             self.run_aware,
             self.run_aware_future_runs,
             self.correction,
