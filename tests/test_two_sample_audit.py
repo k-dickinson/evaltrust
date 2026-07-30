@@ -748,7 +748,11 @@ def test_run_level_html_escapes_special_characters(tmp_path):
 
 
 def test_run_level_html_explain_adds_detail_section(tmp_path):
-    """--explain must add a Detail section in the HTML when there are warn/fail findings."""
+    """--explain must add a Detail section in the HTML when there are warn/fail findings.
+
+    Note: "detail" appears in the inlined CSS (.detail, .detail h2, .detail-item) regardless
+    of --explain.  Assert on the rendered section markup instead.
+    """
     rows = ["alpha,beta"] + ["0.70,0.70"] * 5  # identical → warn/fail
     pf = tmp_path / "eq.csv"
     pf.write_text("\n".join(rows), encoding="utf-8")
@@ -756,7 +760,12 @@ def test_run_level_html_explain_adds_detail_section(tmp_path):
     r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--html", out, "--explain"])
     assert r.exit_code in (0, 1)
     content = open(out, encoding="utf-8").read()
-    assert "detail" in content.lower()
+    # The rendered Detail section heading — distinct from the CSS class names
+    assert "<div class=\'detail\'><h2>Detail</h2>" in content or            "<div class='detail'><h2>Detail</h2>" in content, (
+        "Expected rendered Detail section in HTML with --explain; "
+        f"got content of length {len(content)}"
+    )
+    assert "detail-item" in content
 
 
 # ---------------------------------------------------------------------------
@@ -854,13 +863,11 @@ def test_run_level_plain_ascii_table_maps_both_curly_single_quotes(tmp_path):
 def test_run_level_plain_ascii_translation_has_ten_distinct_keys():
     """Fix (Image 2 - Major): the _ASCII maketrans must cover 10 distinct code points.
 
-    A duplicate dict key silently drops one entry.  We confirm the table has
-    exactly 10 keys covering: · – — • ● U+2018 U+2019 U+201C U+201D ×
+    A duplicate dict key silently drops one entry.  We import the canonical
+    _ASCII table directly from terminal.py so that any regression there
+    (e.g. re-introducing the duplicate key) would be caught by this test.
     """
-    t = str.maketrans({
-        "·": "-", "–": "-", "—": "-", "•": "*", "●": "*",
-        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "×": "x",
-    })
+    from evaltrust.report.terminal import _ASCII as t
     assert len(t) == 10, f"Expected 10 keys in _ASCII maketrans, got {len(t)}"
     for cp in (0x00B7, 0x2013, 0x2014, 0x2022, 0x25CF,
                0x2018, 0x2019, 0x201C, 0x201D, 0x00D7):

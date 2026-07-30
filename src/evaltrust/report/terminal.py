@@ -408,10 +408,11 @@ def render_markdown_from_parts(
     When ``verdict_heading`` / ``verdict_summary`` are omitted, that section is
     skipped, keeping run-level output in sync with the main path for free.
 
-    All user-controlled strings (model names embedded in *subtitle*, finding
-    titles, ``how_to_fix`` text) are Markdown-escaped so that special characters
-    such as ``[``, ``]``, ``*``, and ``_`` cannot break formatting or create
-    unintended hyperlinks in PR comments.
+    *subtitle* is user-controlled (it embeds model names) and is Markdown-escaped
+    so that characters such as ``[``, ``]``, ``*``, and ``_`` cannot break
+    formatting or create unintended hyperlinks in PR comments.  Finding titles,
+    pillar names, and ``how_to_fix`` text are library-authored and rendered
+    verbatim.
     """
     # *subtitle* is user-controlled (contains model names that may hold Markdown
     # special characters like '[', ']', '*', '_').  Finding titles, pillar names,
@@ -463,7 +464,7 @@ def render_markdown(report: AuditReport, explain: bool = False) -> str:
     others = _others(report)
     preamble = (
         [f"_Comparing the two strongest of {len(report.models_available)}; "
-         f"others: {', '.join(others)}_"]
+         f"others: {_md_escape(', '.join(others))}_"]
         if others else None
     )
     return render_markdown_from_parts(

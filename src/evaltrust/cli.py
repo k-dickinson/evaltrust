@@ -241,7 +241,11 @@ def audit(
             # Rich colour terminal — model names may contain square brackets that
             # Rich interprets as markup, so escape before passing to print.
             from rich.markup import escape as _escape
-            from .report.terminal import _grouped, _SYMBOL
+            from rich.text import Text as _Text
+            from .report.terminal import (
+                _display_title, _display_how_detected,
+                _grouped, _SYMBOL, _bullets,
+            )
             _con = Console()
             _con.print(
                 f"\n[bold]EvalTrust[/bold]  "
@@ -251,14 +255,27 @@ def audit(
                 _con.print(f"[bold]{_escape(pillar)}[/bold]")
                 for f in items:
                     sym, color = _SYMBOL[f.status]
+                    _title = _escape(_display_title(f))
                     _con.print(
                         f"  [{color}]{sym}[/{color}] "
-                        + (_escape(f.title) if f.status.value != "skip"
-                           else f"[dim]{_escape(f.title)}[/dim]")
+                        + (_title if f.status is not Status.SKIP
+                           else f"[dim]{_title}[/dim]")
                     )
                     if explain:
-                        _con.print(f"    [dim]{_escape(f.how_detected)}[/dim]")
-            _con.print()
+                        _con.print(
+                            f"    [dim]{_escape(_display_how_detected(f))}[/dim]"
+                        )
+            _t = _Text()
+            _bullets(_t, "What to do",
+                     [f.how_to_fix for f in findings
+                      if f.status in (Status.WARN, Status.FAIL)])
+            _bullets(_t, "To check more",
+                     [f.how_to_fix for f in findings if f.status is Status.SKIP],
+                     style="dim")
+            if _t:
+                _con.print(_t)
+            else:
+                _con.print()
 
         if html_out is not None:
             Path(html_out).write_text(
