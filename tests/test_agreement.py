@@ -82,6 +82,20 @@ def test_fleiss_kappa_perfect_agreement_is_one():
     assert our_fleiss(table) == pytest.approx(1.0)
 
 
+def test_fleiss_kappa_requires_at_least_two_raters_per_item():
+    table = np.array([[1, 0], [0, 1], [1, 0]])
+    with pytest.raises(
+        ValueError,
+        match=r"^fleiss_kappa requires at least two raters per item$",
+    ):
+        our_fleiss(table)
+
+
+def test_fleiss_kappa_two_raters_still_computes():
+    table = np.array([[2, 0], [0, 2]])
+    assert our_fleiss(table) == pytest.approx(1.0)
+
+
 def test_fleiss_kappa_matches_statsmodels():
     rng = np.random.default_rng(1)
     n_items, n_raters, n_cats = 40, 5, 3
