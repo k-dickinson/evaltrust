@@ -57,7 +57,6 @@ saturation_fraction = 0.9
 | `run_aware` | `false` | Add the advisory fixed-example predictive rerun finding (`--run-aware`). Off by default; never changes the existing inference or verdict. See the [predictive rerun method](predictive-rerun.md). |
 | `run_aware_future_runs` | *(none)* | Required positive future run count when `run_aware` is enabled (`--future-runs`). It is never inferred from observed run counts. |
 | `gated_metrics` | *(none)* | Metric names that must reach High confidence, or the whole suite is Low regardless of the other metrics. |
-| `metric_weights` | *(none)* | Per-metric weights (all positive). Validated and stored; reserved for a future weighted suite rollup. |
 
 ## Multiple-comparison correction
 

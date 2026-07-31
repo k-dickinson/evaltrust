@@ -12,7 +12,6 @@ from dataclasses import dataclass, field, fields
 from difflib import get_close_matches
 from numbers import Integral
 from pathlib import Path
-from types import MappingProxyType
 
 try:  # tomllib is stdlib on 3.11+; tomli is the backport for 3.10
     import tomllib as _toml
@@ -30,28 +29,6 @@ def _unknown_keys_message(unknown: list[str], known: set[str]) -> str:
     plural = "s" if len(described) > 1 else ""
     return (f"Unknown config key{plural}: {', '.join(described)}. "
             "The intended setting is NOT applied.")
-
-
-def _validate_weights(weights: dict) -> None:
-    """Raise ValueError for any weight that is zero, negative, or non-numeric.
-
-    Called at config construction time so that load-time errors surface as
-    clean exit-2 messages in the CLI rather than a ZeroDivisionError buried
-    inside ``overall_level``.
-    """
-    for name, w in weights.items():
-        if not isinstance(w, (int, float)):
-            raise ValueError(
-                f"metric_weights: weight for {name!r} must be a number, got {w!r}."
-            )
-        if w <= 0:
-            raise ValueError(
-                f"metric_weights: weight for {name!r} must be positive, got {w!r}."
-            )
-        if not math.isfinite(w):
-            raise ValueError(
-                f"metric_weights: weight for {name!r} must be finite, got {w!r}."
-            )
 
 
 @dataclass(frozen=True)
@@ -79,11 +56,6 @@ class AuditConfig:
     all_pairs: bool = False                 # compare every model pair (opt-in)
     # metrics that must reach HIGH; any below HIGH → suite is LOW immediately
     gated_metrics: frozenset = field(default_factory=frozenset)
-    # metric → positive relative weight for weighted-floor rollup; empty = weakest-metric rule
-    # Stored as a MappingProxyType so the frozen dataclass is truly immutable and
-    # remains hashable (via the __hash__ override below).
-    metric_weights: MappingProxyType = field(
-        default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         if self.run_aware and (
@@ -95,17 +67,6 @@ class AuditConfig:
                 "run_aware_future_runs must be a positive integer when "
                 "run_aware is enabled"
             )
-
-        # Coerce and validate metric_weights so callers using the constructor
-        # directly (not from_dict) get the same guarantees.
-        if not isinstance(self.metric_weights, MappingProxyType):
-            _validate_weights(dict(self.metric_weights))
-            # frozen=True means we can't do self.metric_weights = ...; use object.__setattr__
-            object.__setattr__(
-                self, "metric_weights", MappingProxyType(dict(self.metric_weights))
-            )
-        else:
-            _validate_weights(dict(self.metric_weights))
 
         if self.score_ceiling is not None:
             if not math.isfinite(self.score_ceiling) or self.score_ceiling <= 0:
@@ -124,8 +85,7 @@ class AuditConfig:
             object.__setattr__(self, "gated_metrics", frozenset(self.gated_metrics))
 
     def __hash__(self) -> int:
-        # MappingProxyType is not hashable by default; convert to a sorted
-        # tuple of pairs so identical configs produce the same hash.
+        # Explicit field-tuple hash; keep the tuple in sync with field changes.
         return hash((
             self.alpha,
             self.equivalence_margin,
@@ -146,7 +106,6 @@ class AuditConfig:
             self.correction,
             self.all_pairs,
             self.gated_metrics,
-            tuple(sorted(self.metric_weights.items())),
         ))
 
     @classmethod
@@ -160,7 +119,6 @@ class AuditConfig:
 
         Coerces TOML types to the annotated Python types:
         - ``gated_metrics``: list → frozenset
-        - ``metric_weights``: dict → MappingProxyType (with positive-weight validation)
         """
         known = {f.name for f in fields(cls)}
         unknown = [k for k in data if k not in known]
@@ -180,11 +138,6 @@ class AuditConfig:
                     "Did you mean [\"" + raw_gates + "\"]?"
                 )
             filtered["gated_metrics"] = frozenset(raw_gates)
-
-        if "metric_weights" in filtered:
-            raw = dict(filtered["metric_weights"])
-            _validate_weights(raw)
-            filtered["metric_weights"] = MappingProxyType(raw)
 
         return cls(**filtered)
 
