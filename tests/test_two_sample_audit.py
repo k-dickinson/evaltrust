@@ -859,14 +859,15 @@ def test_main_path_md_subtitle_escapes_brackets_intentionally(tmp_path):
     bold_line = next(
         (line for line in r.output.splitlines() if line.startswith("**")), ""
     )
-    # Brackets must be escaped in the subtitle
-    assert r"\[preview\]" in bold_line or r"\[preview\]" in r.output, (
+    # Brackets must be escaped in the subtitle bold line specifically —
+    # not just anywhere in r.output, which would not verify the subtitle contract.
+    assert r"\[preview\]" in bold_line, (
         f"Brackets in model name must be escaped in main-path --md subtitle; "
         f"got: {bold_line!r}"
     )
-    # Underscore in model name must also be escaped
-    assert r"\_opus" in bold_line or r"\_opus" in r.output, (
-        f"Underscore in model name must be escaped; got: {bold_line!r}"
+    # Underscore in model name must also be escaped in the subtitle
+    assert r"\_opus" in bold_line, (
+        f"Underscore in model name must be escaped in subtitle; got: {bold_line!r}"
     )
 
 
