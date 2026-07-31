@@ -801,6 +801,20 @@ def test_run_level_md_escapes_markdown_special_chars_in_subtitle(tmp_path):
     assert r"\[preview\]" in bold_line, (
         f"Subtitle bold line must contain escaped brackets; got: {bold_line!r}"
     )
+    # dash and dot must NOT be escaped — ordinary names like gpt-4.5 must be unchanged
+    rows2 = ["gpt-4.5,claude-3-opus"] + ["0.82,0.62"] * 12
+    pf2 = tmp_path / "plain_models.csv"
+    pf2.write_text("\n".join(rows2), encoding="utf-8")
+    r2 = _runner.invoke(_app, ["audit", str(pf2), "--run-level", "--md"])
+    bold_line2 = next(
+        (line for line in r2.output.splitlines() if line.startswith("**")), ""
+    )
+    assert "gpt-4.5" in bold_line2, (
+        f"Dash and dot must not be escaped in subtitle; got: {bold_line2!r}"
+    )
+    assert "claude-3-opus" in bold_line2, (
+        f"Dash must not be escaped in subtitle; got: {bold_line2!r}"
+    )
 
 
 def test_run_level_md_escapes_markdown_special_chars_in_finding_title(tmp_path):
@@ -817,6 +831,72 @@ def test_run_level_md_escapes_markdown_special_chars_in_finding_title(tmp_path):
     # A well-formed [label](url) Markdown link should not appear from finding titles
     assert not re.search(r'\[(?!pass|warn|fail|skip)[^\]]+\]\([^)]+\)', r.output), (
         "Finding titles must not accidentally create Markdown links"
+    )
+
+
+def test_main_path_md_subtitle_escapes_brackets_intentionally(tmp_path):
+    """Owner ask 2: lock main-path subtitle escaping with a test so it is intentional.
+
+    The shared render_markdown_from_parts escapes the subtitle, which also affects
+    the normal (paired) audit path.  A model name like ``gpt-4[preview]`` must
+    render as ``gpt-4\\[preview\\]`` in the bold subtitle line, not as a Markdown
+    link label.  Ordinary names with dashes and dots (e.g. ``gpt-4.5``) must be
+    unchanged.
+    """
+    import json as _json
+    # Build a paired audit JSON with bracket-containing model names
+    raw = {
+        "models": ["gpt-4[preview]", "claude-3_opus"],
+        "examples": [
+            {"id": str(i), "scores": {"gpt-4[preview]": 1, "claude-3_opus": 0}}
+            for i in range(20)
+        ],
+    }
+    pf = tmp_path / "paired.json"
+    pf.write_text(_json.dumps(raw), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--md"])
+    assert r.exit_code in (0, 1)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    # Brackets must be escaped in the subtitle
+    assert r"\[preview\]" in bold_line or r"\[preview\]" in r.output, (
+        f"Brackets in model name must be escaped in main-path --md subtitle; "
+        f"got: {bold_line!r}"
+    )
+    # Underscore in model name must also be escaped
+    assert r"\_opus" in bold_line or r"\_opus" in r.output, (
+        f"Underscore in model name must be escaped; got: {bold_line!r}"
+    )
+
+
+def test_main_path_md_subtitle_does_not_escape_dash_or_dot(tmp_path):
+    """Lock: ordinary model names with dashes and dots must not be mangled.
+
+    Confirms the narrowed _md_escape set (Image 2 of owner feedback) so that
+    names like ``gpt-4.5`` and ``claude-3-haiku`` appear verbatim in the
+    Markdown subtitle.
+    """
+    import json as _json
+    raw = {
+        "models": ["gpt-4.5", "claude-3-haiku"],
+        "examples": [
+            {"id": str(i), "scores": {"gpt-4.5": 1, "claude-3-haiku": 0}}
+            for i in range(20)
+        ],
+    }
+    pf = tmp_path / "plain_names.json"
+    pf.write_text(_json.dumps(raw), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--md"])
+    assert r.exit_code in (0, 1)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    assert "gpt-4.5" in bold_line, (
+        f"Dot must not be escaped in model name; got: {bold_line!r}"
+    )
+    assert "claude-3-haiku" in bold_line, (
+        f"Dash must not be escaped in model name; got: {bold_line!r}"
     )
 
 

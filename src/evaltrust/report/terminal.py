@@ -382,14 +382,17 @@ _MD_MARK = {Status.PASS: "pass", Status.WARN: "warn",
 
 
 def _md_escape(s: str) -> str:
-    """Backslash-escape Markdown special characters in user-controlled strings.
+    """Backslash-escape the Markdown characters that break inline formatting
+    or create unintended links (e.g. ``[text](url)``) in a PR comment.
 
-    Characters like ``[``, ``]``, ``*``, ``_``, and backtick can break
-    formatting or create unintended links (e.g. ``[text](url)``) in a PR
-    comment — the primary use case for ``--md``.
+    Escaped: backslash, backtick, ``*``, ``_``, ``[``, ``]``, ``(``, ``)``.
+
+    Deliberately *not* escaped: ``- . # + ! |`` -- these are harmless in the
+    inline positions where model names appear and escaping them would mangle
+    ordinary names like ``gpt-4.5`` or ``claude-3-opus``.
     """
     import re as _re
-    return _re.sub(r'([\\`*_{}\[\]()#+\-.!|])', r'\\\1', str(s))
+    return _re.sub(r'([\\`*_\[\](\)])', r'\\\1', str(s))
 
 
 def render_markdown_from_parts(
