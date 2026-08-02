@@ -10,7 +10,7 @@ import html as _html
 
 from ..audit.runner import AuditReport
 from ..audit.verdict import VerdictLevel
-from ..core.schema import Status
+from ..core.schema import Finding, Status
 from .terminal import (
     _detail_findings,
     _display_how_detected,
@@ -67,10 +67,25 @@ def _e(s: object) -> str:
     return _html.escape(str(s))
 
 
-def render_html(report: AuditReport, explain: bool = False) -> str:
-    """Return a self-contained HTML page for *report*."""
-    v = report.verdict
-    vc = _VERDICT_COLOR[v.level]
+def render_html_from_parts(
+    subtitle: str,
+    findings: "list[Finding]",
+    *,
+    title_suffix: str | None = None,
+    verdict_color: str | None = None,
+    verdict_label: str | None = None,
+    verdict_summary: str | None = None,
+    preamble_html: str | None = None,
+    explain: bool = False,
+) -> str:
+    """Return a self-contained HTML page built from a subtitle string and findings.
+
+    This is the shared implementation used by both the standard AuditReport path
+    (via ``render_html``) and the run-level path (which has no verdict).  When
+    ``verdict_color`` / ``verdict_label`` / ``verdict_summary`` are omitted, the
+    verdict block is skipped, keeping run-level output in sync with the main path.
+    """
+    display_title = f"EvalTrust \u2014 {_e(title_suffix or subtitle)}"
 
     parts: list[str] = []
     p = parts.append
@@ -79,23 +94,23 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
     p("<html lang='en'><head>")
     p("<meta charset='utf-8'>")
     p("<meta name='viewport' content='width=device-width, initial-scale=1'>")
-    p(f"<title>EvalTrust \u2014 {_e(_subtitle(report))}</title>")
+    p(f"<title>{display_title}</title>")
     p(f"<style>{_CSS}</style>")
     p("</head><body>")
 
     p("<h1>EvalTrust</h1>")
-    p(f"<div class='subtitle'>{_e(_subtitle(report))}</div>")
+    p(f"<div class='subtitle'>{_e(subtitle)}</div>")
 
-    others = _others(report)
-    if others:
-        p(f"<div class='subtitle'>comparing the two strongest of "
-          f"{len(report.models_available)}; "
-          f"others: {_e(', '.join(others))}</div>")
+    if preamble_html:
+        p(preamble_html)
 
-    p(f"<div class='verdict' style='color:{vc}'>\u25cf {_e(v.level.value)}</div>")
-    p(f"<div class='summary'>{_e(v.summary)}</div>")
+    if verdict_label is not None:
+        vc = verdict_color or "#6b7280"
+        p(f"<div class='verdict' style='color:{vc}'>\u25cf {_e(verdict_label)}</div>")
+        if verdict_summary is not None:
+            p(f"<div class='summary'>{_e(verdict_summary)}</div>")
 
-    for pillar, items in _grouped(report.findings).items():
+    for pillar, items in _grouped(findings).items():
         p(f"<div class='pillar'>{_e(pillar)}</div>")
         for f in items:
             fc = _STATUS_COLOR[f.status]
@@ -105,15 +120,14 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
             p(f"  {_e(_display_title(f))}")
             p("</div>")
 
-    todo = [f.how_to_fix for f in report.findings
-            if f.status in (Status.WARN, Status.FAIL)]
+    todo = [f.how_to_fix for f in findings if f.status in (Status.WARN, Status.FAIL)]
     if todo:
         p("<div class='todo'><h2>What to do</h2><ul>")
         for item in todo:
             p(f"  <li>{_e(item)}</li>")
         p("</ul></div>")
 
-    optional = [f.how_to_fix for f in report.findings if f.status is Status.SKIP]
+    optional = [f.how_to_fix for f in findings if f.status is Status.SKIP]
     if optional:
         p("<div class='todo'><h2>To check more</h2><ul>")
         for item in optional:
@@ -121,7 +135,7 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
         p("</ul></div>")
 
     if explain:
-        flagged = _detail_findings(report.findings)
+        flagged = _detail_findings(findings)
         if flagged:
             p("<div class='detail'><h2>Detail</h2>")
             for f in flagged:
@@ -137,3 +151,24 @@ def render_html(report: AuditReport, explain: bool = False) -> str:
 
     p("</body></html>")
     return "\n".join(parts)
+
+
+def render_html(report: AuditReport, explain: bool = False) -> str:
+    """Return a self-contained HTML page for *report*."""
+    v = report.verdict
+    others = _others(report)
+    preamble = (
+        f"<div class='subtitle'>comparing the two strongest of "
+        f"{len(report.models_available)}; "
+        f"others: {_e(', '.join(others))}</div>"
+        if others else None
+    )
+    return render_html_from_parts(
+        _subtitle(report),
+        report.findings,
+        verdict_color=_VERDICT_COLOR[v.level],
+        verdict_label=v.level.value,
+        verdict_summary=v.summary,
+        preamble_html=preamble,
+        explain=explain,
+    )

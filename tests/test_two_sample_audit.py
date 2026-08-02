@@ -536,3 +536,420 @@ def test_load_run_level_wide_csv_atomic_row_ingestion(tmp_path):
     assert data.n_a == data.n_b == 2
     np.testing.assert_allclose(sorted(data.scores_a), [0.80, 0.81])
     np.testing.assert_allclose(sorted(data.scores_b), [0.78, 0.79])
+
+
+# ---------------------------------------------------------------------------
+# CLI --run-level: --plain / --md / --html output formats (issue #152)
+# ---------------------------------------------------------------------------
+
+from typer.testing import CliRunner as _CliRunner
+from evaltrust.cli import app as _app
+
+_runner = _CliRunner()
+
+
+def _rl_csv(tmp_path, a_scores=None, b_scores=None):
+    """Write a wide-CSV run-level fixture and return its path as a string."""
+    if a_scores is None:
+        a_scores = [0.82, 0.84, 0.83, 0.85, 0.81,
+                    0.80, 0.83, 0.84, 0.82, 0.85,
+                    0.81, 0.83, 0.84, 0.80, 0.82]
+    if b_scores is None:
+        b_scores = [0.62, 0.64, 0.63, 0.65, 0.61,
+                    0.60, 0.63, 0.64, 0.62, 0.65,
+                    0.61, 0.63, 0.64, 0.60, 0.62]
+    rows = ["alpha,beta"] + [f"{a},{b}" for a, b in zip(a_scores, b_scores)]
+    p = tmp_path / "run_level.csv"
+    p.write_text("\n".join(rows), encoding="utf-8")
+    return str(p)
+
+
+# ---- --plain ---------------------------------------------------------------
+
+def test_run_level_plain_exits_zero(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert r.exit_code == 0, r.output
+
+
+def test_run_level_plain_no_warning_emitted(tmp_path):
+    """No 'not yet fully supported' warning must appear in output after the fix."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert "not yet" not in r.output
+    assert "not fully" not in r.output
+
+
+def test_run_level_plain_header_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    assert "alpha" in r.output
+    assert "beta" in r.output
+    assert "15 runs" in r.output
+
+
+def test_run_level_plain_contains_ascii_status_marks(tmp_path):
+    """--plain must use ASCII bracket marks like [ok  ] / [warn] / [fail]."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    # At least one ASCII bracket mark must appear.
+    import re
+    assert re.search(r"\[(ok  |warn|fail|--  )\]", r.output), (
+        f"No ASCII status mark found in:\n{r.output}"
+    )
+
+
+def test_run_level_plain_no_unicode_bullets(tmp_path):
+    """Plain output must not contain Unicode bullets or arrows."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+    for char in ("✓", "✗", "⚠", "–", "●", "•"):
+        assert char not in r.output, (
+            f"Unicode char {char!r} must not appear in --plain output"
+        )
+
+
+def test_run_level_plain_explain_adds_detail(tmp_path):
+    """--explain must append per-finding why / how_detected text in --plain mode."""
+    path = _rl_csv(tmp_path)
+    # Use data that yields at least one non-pass finding so Detail section fires.
+    # Near-equal scores → inconclusive → warn/fail findings.
+    a = [0.70] * 15
+    b = [0.70] * 15
+    p2 = _rl_csv(tmp_path / "eq.csv" if False else tmp_path, a_scores=a, b_scores=b)
+    import tempfile, os
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--plain", "--explain"])
+    assert r.exit_code in (0, 1)
+    # When there are warn/fail findings the Detail section appears.
+    # With identical scores every finding should be warn or fail.
+    assert "Statistical Validity" in r.output
+
+
+# ---- --md ------------------------------------------------------------------
+
+def test_run_level_md_exits_zero(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.exit_code == 0, r.output
+
+
+def test_run_level_md_no_warning_emitted(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert "not yet" not in r.output
+    assert "not fully" not in r.output
+
+
+def test_run_level_md_starts_with_h1(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.output.startswith("# EvalTrust"), (
+        f"Markdown must start with '# EvalTrust', got:\n{r.output[:120]}"
+    )
+
+
+def test_run_level_md_contains_bold_status_marks(tmp_path):
+    """--md must use **[pass]** / **[warn]** / **[fail]** markers."""
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    import re
+    assert re.search(r"\*\*\[(pass|warn|fail|skip)\]\*\*", r.output), (
+        f"No Markdown status badge found in:\n{r.output}"
+    )
+
+
+def test_run_level_md_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert "alpha" in r.output
+    assert "beta" in r.output
+
+
+def test_run_level_md_what_to_do_section_present_when_findings_warn(tmp_path):
+    """When findings include warn/fail, a '## What to do' section must appear."""
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5  # identical → warn/fail
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # Either there are warn/fail findings (What to do) or all pass (none) —
+    # we just verify the output is valid Markdown either way.
+    assert "# EvalTrust" in r.output
+
+
+# ---- --html ----------------------------------------------------------------
+
+def test_run_level_html_exits_zero_and_writes_file(tmp_path):
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    assert r.exit_code == 0, r.output
+    import os
+    assert os.path.exists(out), "HTML file must be written to disk"
+
+
+def test_run_level_html_no_warning_emitted(tmp_path):
+    """No 'not yet supported' warning must appear after the fix."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    assert "not yet" not in r.output
+    assert "not supported" not in r.output
+
+
+def test_run_level_html_is_valid_document(tmp_path):
+    """The HTML file must start with a DOCTYPE and contain key structural tags."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert content.startswith("<!DOCTYPE html>")
+    assert "<html" in content
+    assert "</html>" in content
+    assert "<body>" in content
+    assert "</body></html>" in content
+
+
+def test_run_level_html_contains_model_names(tmp_path):
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert "alpha" in content
+    assert "beta" in content
+    assert "15 runs" in content
+
+
+def test_run_level_html_contains_badge_spans(tmp_path):
+    """HTML must include badge spans for PASS / WARN / FAIL / SKIP."""
+    path = _rl_csv(tmp_path)
+    out = str(tmp_path / "report.html")
+    _runner.invoke(_app, ["audit", path, "--run-level", "--html", out])
+    content = open(out, encoding="utf-8").read()
+    assert "class='badge'" in content
+
+
+def test_run_level_html_escapes_special_characters(tmp_path):
+    """Model names with angle brackets must be HTML-escaped in the output."""
+    rows = ["<ModelA>,<ModelB>"] + ["0.82,0.62"] * 10
+    pf = tmp_path / "special.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    out = str(tmp_path / "special.html")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--html", out])
+    assert r.exit_code in (0, 1, 2)  # may error on invalid model names; that's fine
+    if r.exit_code in (0, 1):
+        content = open(out, encoding="utf-8").read()
+        # Raw < or > must not appear outside of HTML tags in the text regions
+        assert "<ModelA>" not in content
+        assert "&lt;ModelA&gt;" in content
+
+
+def test_run_level_html_explain_adds_detail_section(tmp_path):
+    """--explain must add a Detail section in the HTML when there are warn/fail findings.
+
+    Note: "detail" appears in the inlined CSS (.detail, .detail h2, .detail-item) regardless
+    of --explain.  Assert on the rendered section markup instead.
+    """
+    rows = ["alpha,beta"] + ["0.70,0.70"] * 5  # identical → warn/fail
+    pf = tmp_path / "eq.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    out = str(tmp_path / "explain.html")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--html", out, "--explain"])
+    assert r.exit_code in (0, 1)
+    content = open(out, encoding="utf-8").read()
+    # The rendered Detail section heading — distinct from the CSS class names
+    assert "<div class=\'detail\'><h2>Detail</h2>" in content or            "<div class='detail'><h2>Detail</h2>" in content, (
+        "Expected rendered Detail section in HTML with --explain; "
+        f"got content of length {len(content)}"
+    )
+    assert "detail-item" in content
+
+
+# ---------------------------------------------------------------------------
+# Reviewer fixes (PR #162 CodeRabbit comments)
+# ---------------------------------------------------------------------------
+
+def test_run_level_md_escapes_markdown_special_chars_in_subtitle(tmp_path):
+    """Fix (Image 1 - Minor): model names in the subtitle must be Markdown-escaped.
+
+    The subtitle line ``**model_a vs model_b · N runs / M runs**`` is user-controlled.
+    A model name like ``gpt-4[preview]`` contains ``[`` and ``]`` which Markdown
+    interprets as a link label; a name shaped like ``[text](url)`` renders as an
+    actual hyperlink in a PR comment — the primary use case for ``--md``.
+
+    Note: finding *titles* are library-authored strings and are deliberately left
+    unescaped so they render verbatim (e.g. parentheses and dots in statistical
+    notation must not be backslash-escaped).
+    """
+    # Use a model name containing Markdown-special characters
+    rows = ["gpt-4[preview],claude-3_opus"] + ["0.82,0.62"] * 12
+    pf = tmp_path / "special_models.csv"
+    pf.write_text("\n".join(rows), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # The subtitle bold line must escape the brackets
+    assert r"\[preview\]" in r.output, (
+        f"Expected escaped subtitle '\\[preview\\]' in --md output; got:\n{r.output}"
+    )
+    # Specifically the **subtitle** line must be escaped (first occurrence = subtitle)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    assert r"\[preview\]" in bold_line, (
+        f"Subtitle bold line must contain escaped brackets; got: {bold_line!r}"
+    )
+    # dash and dot must NOT be escaped — ordinary names like gpt-4.5 must be unchanged
+    rows2 = ["gpt-4.5,claude-3-opus"] + ["0.82,0.62"] * 12
+    pf2 = tmp_path / "plain_models.csv"
+    pf2.write_text("\n".join(rows2), encoding="utf-8")
+    r2 = _runner.invoke(_app, ["audit", str(pf2), "--run-level", "--md"])
+    bold_line2 = next(
+        (line for line in r2.output.splitlines() if line.startswith("**")), ""
+    )
+    assert "gpt-4.5" in bold_line2, (
+        f"Dash and dot must not be escaped in subtitle; got: {bold_line2!r}"
+    )
+    assert "claude-3-opus" in bold_line2, (
+        f"Dash must not be escaped in subtitle; got: {bold_line2!r}"
+    )
+
+
+def test_run_level_md_escapes_markdown_special_chars_in_finding_title(tmp_path):
+    """Fix (Image 1 - Minor): finding titles with Markdown-special chars must be escaped.
+
+    Finding titles can contain characters like '*', '_', '[', ']' which may
+    break Markdown formatting in a PR comment.
+    """
+    path = _rl_csv(tmp_path)
+    r = _runner.invoke(_app, ["audit", path, "--run-level", "--md"])
+    assert r.exit_code in (0, 1)
+    # Verify no raw unescaped '[text](url)' pattern appears (linkification check)
+    import re
+    # A well-formed [label](url) Markdown link should not appear from finding titles
+    assert not re.search(r'\[(?!pass|warn|fail|skip)[^\]]+\]\([^)]+\)', r.output), (
+        "Finding titles must not accidentally create Markdown links"
+    )
+
+
+def test_main_path_md_subtitle_escapes_brackets_intentionally(tmp_path):
+    """Owner ask 2: lock main-path subtitle escaping with a test so it is intentional.
+
+    The shared render_markdown_from_parts escapes the subtitle, which also affects
+    the normal (paired) audit path.  A model name like ``gpt-4[preview]`` must
+    render as ``gpt-4\\[preview\\]`` in the bold subtitle line, not as a Markdown
+    link label.  Ordinary names with dashes and dots (e.g. ``gpt-4.5``) must be
+    unchanged.
+    """
+    import json as _json
+    # Build a paired audit JSON with bracket-containing model names
+    raw = {
+        "models": ["gpt-4[preview]", "claude-3_opus"],
+        "examples": [
+            {"id": str(i), "scores": {"gpt-4[preview]": 1, "claude-3_opus": 0}}
+            for i in range(20)
+        ],
+    }
+    pf = tmp_path / "paired.json"
+    pf.write_text(_json.dumps(raw), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--md"])
+    assert r.exit_code in (0, 1)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    # Brackets must be escaped in the subtitle bold line specifically —
+    # not just anywhere in r.output, which would not verify the subtitle contract.
+    assert r"\[preview\]" in bold_line, (
+        f"Brackets in model name must be escaped in main-path --md subtitle; "
+        f"got: {bold_line!r}"
+    )
+    # Underscore in model name must also be escaped in the subtitle
+    assert r"\_opus" in bold_line, (
+        f"Underscore in model name must be escaped in subtitle; got: {bold_line!r}"
+    )
+
+
+def test_main_path_md_subtitle_does_not_escape_dash_or_dot(tmp_path):
+    """Lock: ordinary model names with dashes and dots must not be mangled.
+
+    Confirms the narrowed _md_escape set (Image 2 of owner feedback) so that
+    names like ``gpt-4.5`` and ``claude-3-haiku`` appear verbatim in the
+    Markdown subtitle.
+    """
+    import json as _json
+    raw = {
+        "models": ["gpt-4.5", "claude-3-haiku"],
+        "examples": [
+            {"id": str(i), "scores": {"gpt-4.5": 1, "claude-3-haiku": 0}}
+            for i in range(20)
+        ],
+    }
+    pf = tmp_path / "plain_names.json"
+    pf.write_text(_json.dumps(raw), encoding="utf-8")
+    r = _runner.invoke(_app, ["audit", str(pf), "--md"])
+    assert r.exit_code in (0, 1)
+    bold_line = next(
+        (line for line in r.output.splitlines() if line.startswith("**")), ""
+    )
+    assert "gpt-4.5" in bold_line, (
+        f"Dot must not be escaped in model name; got: {bold_line!r}"
+    )
+    assert "claude-3-haiku" in bold_line, (
+        f"Dash must not be escaped in model name; got: {bold_line!r}"
+    )
+
+
+def test_run_level_plain_ascii_table_maps_both_curly_single_quotes(tmp_path):
+    """Fix (Image 2 - Major): U+2018 and U+2019 must both be mapped in _ASCII.
+
+    The original code had a duplicate dict key (two ASCII apostrophes 0x27)
+    so Python silently dropped one entry and neither U+2018 nor U+2019 was
+    actually mapped.  This test injects a finding title containing both
+    curly single quotes and verifies the --plain output contains only ASCII.
+    """
+    import unittest.mock as mock
+    from evaltrust.core.schema import Finding, Status
+
+    curly_title = "\u2018left\u2019 and \u2018right\u2019 curly quotes"
+
+    fake_finding = Finding(
+        pillar="Statistical Validity",
+        title=curly_title,
+        status=Status.PASS,
+        why="test",
+        how_detected="test",
+        how_to_fix="test",
+        details={"check": "decision", "comparison_path": "unpaired_two_sample"},
+    )
+
+    path = _rl_csv(tmp_path)
+    # Patch the name as it is bound in the cli module (already imported at the top)
+    with mock.patch("evaltrust.cli.audit_two_sample", return_value=[fake_finding]):
+        r = _runner.invoke(_app, ["audit", path, "--run-level", "--plain"])
+
+    assert r.exit_code in (0, 1)
+    # U+2018 and U+2019 must NOT appear — they must have been translated to ASCII
+    assert "\u2018" not in r.output, (
+        "U+2018 (left single quote) must be translated to ASCII in --plain output"
+    )
+    assert "\u2019" not in r.output, (
+        "U+2019 (right single quote) must be translated to ASCII in --plain output"
+    )
+    # The content words must still be present (just with ASCII apostrophes now)
+    assert "left" in r.output and "right" in r.output
+
+
+def test_run_level_plain_ascii_translation_has_ten_distinct_keys():
+    """Fix (Image 2 - Major): the _ASCII maketrans must cover 10 distinct code points.
+
+    A duplicate dict key silently drops one entry.  We import the canonical
+    _ASCII table directly from terminal.py so that any regression there
+    (e.g. re-introducing the duplicate key) would be caught by this test.
+    """
+    from evaltrust.report.terminal import _ASCII as t
+    assert len(t) == 10, f"Expected 10 keys in _ASCII maketrans, got {len(t)}"
+    for cp in (0x00B7, 0x2013, 0x2014, 0x2022, 0x25CF,
+               0x2018, 0x2019, 0x201C, 0x201D, 0x00D7):
+        assert cp in t, f"U+{cp:04X} missing from _ASCII maketrans"

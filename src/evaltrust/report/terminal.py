@@ -302,33 +302,46 @@ def render_diff_plain(diff) -> str:
     return ("\n".join(lines).rstrip() + "\n").translate(_ASCII)
 
 
-def render_plain(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as plain ASCII, safe for Windows, CI logs, and pipes."""
-    v = report.verdict
-    lines = ["EvalTrust  " + _subtitle(report)]
-    others = _others(report)
-    if others:
-        lines.append(f"comparing the two strongest of "
-                     f"{len(report.models_available)}; others: {', '.join(others)}")
-    lines += ["", f"{v.level.value.upper()}", v.summary]
+def render_plain_from_parts(
+    subtitle: str,
+    findings: "list[Finding]",
+    *,
+    verdict_line: str | None = None,
+    verdict_summary: str | None = None,
+    preamble_lines: "list[str] | None" = None,
+    explain: bool = False,
+) -> str:
+    """Render plain ASCII output from a subtitle string and a list of findings.
 
-    for pillar, items in _grouped(report.findings).items():
+    This is the shared implementation used by both the standard AuditReport path
+    (via ``render_plain``) and the run-level path (which has no verdict).  When
+    ``verdict_line`` / ``verdict_summary`` are omitted, that block is skipped so
+    the run-level output stays in sync with the normal output for free.
+    """
+    lines = ["EvalTrust  " + subtitle]
+    if preamble_lines:
+        lines.extend(preamble_lines)
+    if verdict_line is not None:
+        lines += ["", verdict_line]
+        if verdict_summary is not None:
+            lines.append(verdict_summary)
+
+    for pillar, items in _grouped(findings).items():
         lines.append("")
         lines.append(pillar)
         for f in items:
             lines.append(f"  [{_PLAIN_MARK[f.status]}] {_display_title(f)}")
 
-    todo = [f.how_to_fix for f in report.findings
-            if f.status in (Status.WARN, Status.FAIL)]
+    todo = [f.how_to_fix for f in findings if f.status in (Status.WARN, Status.FAIL)]
     if todo:
         lines += ["", "What to do"] + [f"  - {x}" for x in todo]
 
-    optional = [f.how_to_fix for f in report.findings if f.status is Status.SKIP]
+    optional = [f.how_to_fix for f in findings if f.status is Status.SKIP]
     if optional:
         lines += ["", "To check more"] + [f"  - {x}" for x in optional]
 
     if explain:
-        flagged = _detail_findings(report.findings)
+        flagged = _detail_findings(findings)
         if flagged:
             lines += ["", "Detail"]
             for f in flagged:
@@ -341,6 +354,25 @@ def render_plain(report: AuditReport, explain: bool = False) -> str:
     return ("\n".join(lines).rstrip() + "\n").translate(_ASCII)
 
 
+def render_plain(report: AuditReport, explain: bool = False) -> str:
+    """Render the report as plain ASCII, safe for Windows, CI logs, and pipes."""
+    v = report.verdict
+    others = _others(report)
+    preamble = (
+        [f"comparing the two strongest of "
+         f"{len(report.models_available)}; others: {', '.join(others)}"]
+        if others else None
+    )
+    return render_plain_from_parts(
+        _subtitle(report),
+        report.findings,
+        verdict_line=v.level.value.upper(),
+        verdict_summary=v.summary,
+        preamble_lines=preamble,
+        explain=explain,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Markdown rendering (PR comments / docs)
 # --------------------------------------------------------------------------- #
@@ -349,50 +381,103 @@ _MD_MARK = {Status.PASS: "pass", Status.WARN: "warn",
             Status.FAIL: "fail", Status.SKIP: "skip"}
 
 
-def render_markdown(report: AuditReport, explain: bool = False) -> str:
-    """Render the report as Markdown, suitable for PR comments and docs."""
-    v = report.verdict
-    lines = [f"# EvalTrust", "", f"**{_subtitle(report)}**", ""]
-    others = _others(report)
-    if others:
-        lines.append(
-            f"_Comparing the two strongest of {len(report.models_available)}; "
-            f"others: {', '.join(others)}_"
-        )
-        lines.append("")
-    lines += [f"## {v.level.value}", "", v.summary, ""]
+def _md_escape(s: str) -> str:
+    """Backslash-escape the Markdown characters that break inline formatting
+    or create unintended links (e.g. ``[text](url)``) in a PR comment.
 
-    for pillar, items in _grouped(report.findings).items():
+    Escaped: backslash, backtick, ``*``, ``_``, ``[``, ``]``, ``(``, ``)``.
+
+    Deliberately *not* escaped: ``- . # + ! |`` -- these are harmless in the
+    inline positions where model names appear and escaping them would mangle
+    ordinary names like ``gpt-4.5`` or ``claude-3-opus``.
+    """
+    import re as _re
+    return _re.sub(r'([\\`*_\[\](\)])', r'\\\1', str(s))
+
+
+def render_markdown_from_parts(
+    subtitle: str,
+    findings: "list[Finding]",
+    *,
+    verdict_heading: str | None = None,
+    verdict_summary: str | None = None,
+    preamble_lines: "list[str] | None" = None,
+    explain: bool = False,
+) -> str:
+    """Render Markdown from a subtitle string and a list of findings.
+
+    This is the shared implementation used by both the standard AuditReport path
+    (via ``render_markdown``) and the run-level path (which has no verdict).
+    When ``verdict_heading`` / ``verdict_summary`` are omitted, that section is
+    skipped, keeping run-level output in sync with the main path for free.
+
+    *subtitle* is user-controlled (it embeds model names) and is Markdown-escaped
+    so that characters such as ``[``, ``]``, ``*``, and ``_`` cannot break
+    formatting or create unintended hyperlinks in PR comments.  Finding titles,
+    pillar names, and ``how_to_fix`` text are library-authored and rendered
+    verbatim.
+    """
+    # *subtitle* is user-controlled (contains model names that may hold Markdown
+    # special characters like '[', ']', '*', '_').  Finding titles, pillar names,
+    # and how_to_fix strings are all library-authored and must appear verbatim.
+    lines = ["# EvalTrust", "", f"**{_md_escape(subtitle)}**", ""]
+    if preamble_lines:
+        lines.extend(preamble_lines)
+        lines.append("")
+    if verdict_heading is not None:
+        lines += [f"## {verdict_heading}", ""]
+        if verdict_summary is not None:
+            lines += [verdict_summary, ""]
+
+    for pillar, items in _grouped(findings).items():
         lines.append(f"### {pillar}")
         lines.append("")
         for f in items:
             lines.append(f"- **[{_MD_MARK[f.status]}]** {_display_title(f)}")
         lines.append("")
 
-    todo = [f.how_to_fix for f in report.findings
-            if f.status in (Status.WARN, Status.FAIL)]
+    todo = [f.how_to_fix for f in findings if f.status in (Status.WARN, Status.FAIL)]
     if todo:
         lines += ["## What to do", ""] + [f"- {x}" for x in todo] + [""]
 
-    optional = [f.how_to_fix for f in report.findings if f.status is Status.SKIP]
+    optional = [f.how_to_fix for f in findings if f.status is Status.SKIP]
     if optional:
         lines += ["## To check more", ""] + [f"- {x}" for x in optional] + [""]
 
     if explain:
-        flagged = _detail_findings(report.findings)
+        flagged = _detail_findings(findings)
         if flagged:
             lines += ["## Detail", ""]
             for f in flagged:
                 lines += [
                     f"### [{_MD_MARK[f.status]}] {_display_title(f)}",
                     "",
-                    f"{f.why}",
+                    f.why,
                     "",
-                    f"{_display_how_detected(f)}",
+                    _display_how_detected(f),
                     "",
                 ]
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_markdown(report: AuditReport, explain: bool = False) -> str:
+    """Render the report as Markdown, suitable for PR comments and docs."""
+    v = report.verdict
+    others = _others(report)
+    preamble = (
+        [f"_Comparing the two strongest of {len(report.models_available)}; "
+         f"others: {_md_escape(', '.join(others))}_"]
+        if others else None
+    )
+    return render_markdown_from_parts(
+        _subtitle(report),
+        report.findings,
+        verdict_heading=v.level.value,
+        verdict_summary=v.summary,
+        preamble_lines=preamble,
+        explain=explain,
+    )
 
 
 def render_suite_markdown(suite, explain: bool = False) -> str:

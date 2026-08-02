@@ -29,14 +29,16 @@ from .config import AuditConfig
 from .audit.two_sample import audit_two_sample
 from .core.ingest import load_comparison, load_run_level, load_suite
 from .diff import compare
-from .report.html import render_html
+from .report.html import render_html, render_html_from_parts
 from .report.terminal import (
     print_diff,
     print_report,
     print_suite,
     render_diff_plain,
     render_markdown,
+    render_markdown_from_parts,
     render_plain,
+    render_plain_from_parts,
     render_suite_markdown,
     render_suite_plain,
 )
@@ -223,53 +225,77 @@ def audit(
             "findings": [f.to_dict() for f in findings],
         }
 
+        # Build the subtitle string shared by all three text formats.
+        rl_subtitle = (
+            f"{rl_data.model_a} vs {rl_data.model_b} · "
+            f"{rl_data.n_a} runs / {rl_data.n_b} runs"
+        )
+
         if as_json:
             typer.echo(json.dumps(report_dict, indent=2))
-        elif plain or md:
-            # --plain and --md emit the same plain-text summary (no colour, ASCII icons only).
-            _warn.print(
-                "[yellow]--md/--plain are not yet fully supported for --run-level "
-                "audits; printing the standard plain summary instead.[/yellow]"
-            )
-            icon_map = {"pass": "[PASS]", "warn": "[WARN]", "fail": "[FAIL]", "skip": "[SKIP]"}
+        elif md:
+            # Delegate to the shared renderer (no verdict → verdict args omitted).
             typer.echo(
-                f"\nRun-level two-sample audit: "
-                f"{rl_data.model_a} vs {rl_data.model_b}  "
-                f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
+                render_markdown_from_parts(rl_subtitle, findings, explain=explain),
+                nl=False,
             )
-            for f in findings:
-                icon = icon_map.get(f.status.value, "[?]")
-                typer.echo(f"  {icon} {f.title}")
-                if explain:
-                    typer.echo(f"    {f.how_detected}")
-            typer.echo("")
+        elif plain:
+            # Delegate to the shared renderer (no verdict → verdict args omitted).
+            typer.echo(
+                render_plain_from_parts(rl_subtitle, findings, explain=explain),
+                nl=False,
+            )
         else:
-            # Model names and finding titles may contain square brackets
-            # (e.g. "gpt-4[preview]") which Rich interprets as markup tags.
-            # Escape all interpolated values before passing to _con.print.
-            from rich.console import Console as _Console
+            # Rich colour terminal — model names may contain square brackets that
+            # Rich interprets as markup, so escape before passing to print.
             from rich.markup import escape as _escape
-            _con = _Console()
-            _con.print(
-                f"\n[bold]Run-level two-sample audit:[/bold] "
-                f"[cyan]{_escape(rl_data.model_a)}[/cyan] vs "
-                f"[cyan]{_escape(rl_data.model_b)}[/cyan]  "
-                f"({rl_data.n_a} runs / {rl_data.n_b} runs)\n"
+            from rich.text import Text as _Text
+            from .report.terminal import (
+                _display_title, _display_how_detected,
+                _grouped, _SYMBOL, _bullets,
             )
-            for f in findings:
-                icon = {"pass": "✓", "warn": "⚠", "fail": "✗", "skip": "–"}.get(
-                    f.status.value, "?"
-                )
-                colour = {"pass": "green", "warn": "yellow", "fail": "red",
-                          "skip": "dim"}.get(f.status.value, "white")
-                _con.print(f"  [{colour}]{icon}[/{colour}] {_escape(f.title)}")
-                if explain:
-                    _con.print(f"    [dim]{_escape(f.how_detected)}[/dim]")
-            _con.print()
+            _con = Console()
+            _con.print(
+                f"\n[bold]EvalTrust[/bold]  "
+                f"[dim]{_escape(rl_subtitle)}[/dim]\n"
+            )
+            for pillar, items in _grouped(findings).items():
+                _con.print(f"[bold]{_escape(pillar)}[/bold]")
+                for f in items:
+                    sym, color = _SYMBOL[f.status]
+                    _title = _escape(_display_title(f))
+                    _con.print(
+                        f"  [{color}]{sym}[/{color}] "
+                        + (_title if f.status is not Status.SKIP
+                           else f"[dim]{_title}[/dim]")
+                    )
+                    if explain:
+                        _con.print(
+                            f"    [dim]{_escape(_display_how_detected(f))}[/dim]"
+                        )
+            _t = _Text()
+            _bullets(_t, "What to do",
+                     [f.how_to_fix for f in findings
+                      if f.status in (Status.WARN, Status.FAIL)])
+            _bullets(_t, "To check more",
+                     [f.how_to_fix for f in findings if f.status is Status.SKIP],
+                     style="dim")
+            if _t:
+                _con.print(_t)
+            else:
+                _con.print()
 
         if html_out is not None:
-            _warn.print(
-                "[yellow]--html is not yet supported for --run-level audits.[/yellow]"
+            Path(html_out).write_text(
+                render_html_from_parts(
+                    rl_subtitle,
+                    findings,
+                    title_suffix=(
+                        f"Run-level: {rl_data.model_a} vs {rl_data.model_b}"
+                    ),
+                    explain=explain,
+                ),
+                encoding="utf-8",
             )
 
         # Exit code: fail if --strict or --fail-under and worst finding is bad.
