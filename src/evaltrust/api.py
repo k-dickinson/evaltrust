@@ -47,6 +47,9 @@ def audit(
     run_aware: bool = False,
     run_aware_future_runs: int | None = None,
     correction: str = "bonferroni",
+    # --- efficiency (advisory; absent when not supplied) ---
+    token_count_data: "EvalData | None" = None,
+    latency_data: "EvalData | None" = None,
     # --- config passthrough (takes precedence over loose kwargs) ---
     config: "AuditConfig | None" = None,
 ) -> AuditReport:
@@ -83,6 +86,16 @@ def audit(
     correction:
         Multiple-comparison correction for suite audits: ``"bonferroni"``,
         ``"holm"``, or ``"none"`` (default ``"bonferroni"``).
+    token_count_data:
+        Optional :class:`EvalData` whose ``scores`` carry per-example token
+        counts for the same two models.  When supplied, an advisory
+        ``Efficiency`` finding is added that shows the token-count ratio
+        alongside the quality delta.  Does not change the verdict level.
+    latency_data:
+        Optional :class:`EvalData` whose ``scores`` carry per-example latency
+        values (milliseconds or any consistent unit) for the same two models.
+        When supplied, an advisory ``Efficiency`` finding is added.  Does not
+        change the verdict level.
     config:
         A fully built :class:`AuditConfig`.  When supplied, all loose statistical
         kwargs above are ignored and the config is used directly.
@@ -103,7 +116,8 @@ def audit(
             correction=correction,
         )
 
-    kw = dict(config=config, threshold=threshold, slice_by=slice_by)
+    kw = dict(config=config, threshold=threshold, slice_by=slice_by,
+              token_count_data=token_count_data, latency_data=latency_data)
 
     if isinstance(source, EvalData):
         return run_audit(source, model_a=model_a, model_b=model_b, **kw)
