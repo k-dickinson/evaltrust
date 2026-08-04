@@ -169,6 +169,21 @@ def test_ordinal_detection_accepts_integer_values_within_float_tolerance():
     assert "rank_biserial" in effect.details
     assert effect.details["scale_levels"] == 3
 
+    nominal_ties = np.tile([1.0, 2.0, 3.0], 10)
+    noisy_ties = nominal_ties + 5e-10
+    tied_effect = by_check(
+        audit_statistical_validity(
+            make_data(noisy_ties, nominal_ties),
+            "A",
+            "B",
+            seed=0,
+            n_resamples=200,
+        ),
+        "effect_size",
+    )
+    assert tied_effect.details["rank_biserial"] == 0.0
+    assert tied_effect.details["prob_superiority"] == 0.5
+
 
 def test_negative_ordinal_scale_range_is_unambiguous():
     a = np.tile([-2, -1, 0, 1, 2], 4)

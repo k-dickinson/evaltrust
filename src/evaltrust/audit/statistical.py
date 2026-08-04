@@ -73,6 +73,10 @@ def audit_statistical_validity(
     ordinal = not binary and _is_ordinal(
         data, model_a, model_b, levels=ordinal_levels
     )
+    # Values admitted by the integer tolerance represent the same ordinal
+    # levels as their rounded values. Normalize only the new effect-size path;
+    # the existing decision and confidence calculations remain unchanged.
+    effect_diffs = np.rint(diffs) if ordinal else diffs
     clustered = data.has_clusters
     cluster_note = (
         " (examples treated as independent — supply a group_id per example "
@@ -144,7 +148,8 @@ def audit_statistical_validity(
     return [
         _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
                   equivalence_margin, leader, trailer),
-        _effect_size(data, diffs, binary, ordinal, ordinal_levels, leader, trailer,
+        _effect_size(data, effect_diffs, binary, ordinal, ordinal_levels,
+                     leader, trailer,
                      confidence, n_resamples, seed),
         _precision(outcome, n, alpha, power_target, smallest_meaningful_effect),
     ]
