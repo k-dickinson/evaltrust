@@ -475,3 +475,118 @@ def test_slower_latency_ratio_reads_greater_than_one():
     assert ratio_val >= 1.0, (
         f"Slower-branch ratio must be >= 1, got {ratio_val}x"
     )
+
+
+# ---------------------------------------------------------------------------
+# Bug fix: latency_unit is carried through to how_detected (Image 1)
+# ---------------------------------------------------------------------------
+
+def test_latency_unit_default_is_ms():
+    """Default latency_unit is 'ms', so how_detected says ms/example."""
+    quality = make_data([0.8] * 10, [0.9] * 10)
+    latency = two_model_cost_data([200] * 10, [600] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "ms/example" in lf.how_detected
+
+
+def test_latency_unit_seconds_appears_in_how_detected():
+    """When latency_unit='s', how_detected must say 's/example', not 'ms/example'."""
+    quality = make_data([0.8] * 10, [0.9] * 10)
+    latency = two_model_cost_data([0.2] * 10, [0.6] * 10)
+    findings = audit_efficiency(quality, "A", "B",
+                                latency_data=latency, latency_unit="s")
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "s/example" in lf.how_detected
+    assert "ms/example" not in lf.how_detected
+
+
+def test_latency_unit_microseconds():
+    """latency_unit='us' flows through correctly."""
+    quality = make_data([0.8] * 10, [0.9] * 10)
+    latency = two_model_cost_data([200000] * 10, [600000] * 10)
+    findings = audit_efficiency(quality, "A", "B",
+                                latency_data=latency, latency_unit="us")
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "us/example" in lf.how_detected
+
+
+def test_latency_unit_via_public_api():
+    """latency_unit is accepted and threaded through the public audit() call."""
+    import evaltrust
+    quality = make_data([0.8] * 20, [0.9] * 20)
+    latency = two_model_cost_data([0.2] * 20, [0.6] * 20)
+    report = evaltrust.audit(quality, model_a="A", model_b="B",
+                             latency_data=latency, latency_unit="s")
+    lf = [f for f in report.findings if f.details.get("check") == "efficiency_latency"]
+    assert len(lf) == 1
+    assert "s/example" in lf[0].how_detected
+    assert "ms/example" not in lf[0].how_detected
+
+
+# ---------------------------------------------------------------------------
+# Bug fix: equality branches for tied resource means (Image 2)
+# ---------------------------------------------------------------------------
+
+def test_equal_token_means_no_directional_claim():
+    """When A and B use exactly the same tokens, the title must not say
+    'fewer' or 'uses Nx the tokens' -- it should say 'same'."""
+    quality = make_data([0.8] * 10, [0.9] * 10)
+    tokens = two_model_cost_data([200] * 10, [200] * 10)  # identical means
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    assert "same" in tf.title.lower(), (
+        f"Expected 'same' in title for equal token means, got: '{tf.title}'"
+    )
+    assert "fewer" not in tf.title.lower()
+    # Recommendation should be based on quality only
+    assert "quality" in tf.how_to_fix.lower()
+
+
+def test_equal_token_means_equal_quality_says_either():
+    """Both equal tokens AND equal quality -> 'either model is a valid choice'."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    tokens = two_model_cost_data([200] * 10, [200] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    assert "either" in tf.how_to_fix.lower() or "valid" in tf.how_to_fix.lower()
+
+
+def test_equal_latency_means_no_directional_claim():
+    """When A and B have the same latency, the title must not call either slower."""
+    quality = make_data([0.8] * 10, [0.9] * 10)
+    latency = two_model_cost_data([300] * 10, [300] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "same" in lf.title.lower(), (
+        f"Expected 'same' in title for equal latency means, got: '{lf.title}'"
+    )
+    assert "slower" not in lf.title.lower()
+    assert "faster" not in lf.title.lower()
+
+
+def test_equal_latency_equal_quality_says_either():
+    """Both equal latency AND equal quality -> 'either model is a valid choice'."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    latency = two_model_cost_data([300] * 10, [300] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "either" in lf.how_to_fix.lower() or "valid" in lf.how_to_fix.lower()
+
+
+def test_equal_latency_b_better_quality_recommends_b():
+    """Equal latency but B is better on quality -> prefer B."""
+    quality = make_data([0.7] * 10, [0.9] * 10)
+    latency = two_model_cost_data([300] * 10, [300] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    assert "B" in lf.how_to_fix or "prefer" in lf.how_to_fix.lower()
+
+
+def test_equal_token_b_worse_quality_recommends_a():
+    """Equal tokens but B is worse on quality -> prefer A."""
+    quality = make_data([0.9] * 10, [0.7] * 10)
+    tokens = two_model_cost_data([200] * 10, [200] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    assert "A" in tf.how_to_fix

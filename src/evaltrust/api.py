@@ -50,6 +50,7 @@ def audit(
     # --- efficiency (advisory; absent when not supplied) ---
     token_count_data: "EvalData | None" = None,
     latency_data: "EvalData | None" = None,
+    latency_unit: str = "ms",
     # --- config passthrough (takes precedence over loose kwargs) ---
     config: "AuditConfig | None" = None,
 ) -> AuditReport:
@@ -93,9 +94,12 @@ def audit(
         alongside the quality delta.  Does not change the verdict level.
     latency_data:
         Optional :class:`EvalData` whose ``scores`` carry per-example latency
-        values (milliseconds or any consistent unit) for the same two models.
-        When supplied, an advisory ``Efficiency`` finding is added.  Does not
-        change the verdict level.
+        values for the same two models.  When supplied, an advisory
+        ``Efficiency`` finding is added.  Does not change the verdict level.
+    latency_unit:
+        Unit label for latency values (default ``"ms"``).  Pass ``"s"`` if
+        the caller stores seconds, ``"us"`` for microseconds, etc.  Used
+        verbatim in the finding text so the output always matches the data.
     config:
         A fully built :class:`AuditConfig`.  When supplied, all loose statistical
         kwargs above are ignored and the config is used directly.
@@ -117,7 +121,8 @@ def audit(
         )
 
     kw = dict(config=config, threshold=threshold, slice_by=slice_by,
-              token_count_data=token_count_data, latency_data=latency_data)
+              token_count_data=token_count_data, latency_data=latency_data,
+              latency_unit=latency_unit)
 
     if isinstance(source, EvalData):
         return run_audit(source, model_a=model_a, model_b=model_b, **kw)

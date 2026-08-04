@@ -41,6 +41,7 @@ def audit_efficiency(
     *,
     token_count_data: EvalData | None = None,
     latency_data: EvalData | None = None,
+    latency_unit: str = "ms",
 ) -> list[Finding]:
     """Return advisory efficiency findings when cost or latency data is present.
 
@@ -58,8 +59,13 @@ def audit_efficiency(
         skipped.
     latency_data:
         Optional ``EvalData`` whose ``scores`` carry per-example latency
-        values (milliseconds or any consistent unit) for the same two models.
-        When ``None`` the latency finding is skipped.
+        values for the same two models.  When ``None`` the latency finding is
+        skipped.
+    latency_unit:
+        The unit label for latency values (default ``"ms"``).  Pass ``"s"``
+        if the caller stores seconds, ``"us"`` for microseconds, etc.  The
+        value is used verbatim in the ``how_detected`` text so the finding
+        always reflects the actual unit of the data.
 
     Returns
     -------
@@ -91,7 +97,7 @@ def audit_efficiency(
 
     if latency_data is not None:
         f = _latency_finding(latency_data, model_a, model_b,
-                             quality_delta)
+                             quality_delta, latency_unit)
         if f is not None:
             findings.append(f)
 
@@ -145,14 +151,16 @@ def _token_finding(
     ratio_b_over_a = _ratio_str(mean_tok_b, mean_tok_a)  # mean_tok_b / mean_tok_a
     ratio_a_over_b = _ratio_str(mean_tok_a, mean_tok_b)  # mean_tok_a / mean_tok_b (>1 when B cheaper)
 
-    if mean_tok_b >= mean_tok_a:
+    tok_equal = math.isclose(mean_tok_a, mean_tok_b, rel_tol=1e-9)
+
+    if tok_equal:
+        comparison = f"{model_b} uses the same number of tokens as {model_a}"
+    elif mean_tok_b > mean_tok_a:
         # B costs more tokens
         comparison = f"{model_b} uses {ratio_b_over_a} the tokens of {model_a}"
-        ratio_display = ratio_b_over_a
     else:
         # B is cheaper -- show how much cheaper B is relative to A (ratio > 1)
         comparison = f"{model_b} uses {ratio_a_over_b} fewer tokens than {model_a}"
-        ratio_display = ratio_a_over_b
 
     title = f"Token cost: {comparison}"
     how = (
@@ -161,8 +169,25 @@ def _token_finding(
         f"Quality delta: {q_str}."
     )
 
-    if abs(quality_delta) < 1e-9:
-        if mean_tok_b >= mean_tok_a:
+    if tok_equal:
+        # Cost is equal -- recommendation driven purely by quality delta.
+        if abs(quality_delta) < 1e-9:
+            fix = (
+                f"The models are equal on both quality and token cost. "
+                f"Either model is a valid choice."
+            )
+        elif quality_delta > 0:
+            fix = (
+                f"The models cost the same number of tokens. {model_b} is "
+                f"better on quality ({q_str}) -- prefer {model_b}."
+            )
+        else:
+            fix = (
+                f"The models cost the same number of tokens. {model_b} is "
+                f"worse on quality ({q_str}) -- prefer {model_a}."
+            )
+    elif abs(quality_delta) < 1e-9:
+        if mean_tok_b > mean_tok_a:
             fix = (
                 f"The models are equivalent on quality. {model_b} costs "
                 f"{ratio_b_over_a} the tokens -- prefer {model_a}."
@@ -228,6 +253,7 @@ def _latency_finding(
     model_a: str,
     model_b: str,
     quality_delta: float,
+    latency_unit: str = "ms",
 ) -> Finding | None:
     mean_lat_a = _mean(latency_data, model_a)
     mean_lat_b = _mean(latency_data, model_b)
@@ -242,24 +268,44 @@ def _latency_finding(
     ratio_b_over_a = _ratio_str(mean_lat_b, mean_lat_a)  # mean_lat_b / mean_lat_a
     ratio_a_over_b = _ratio_str(mean_lat_a, mean_lat_b)  # mean_lat_a / mean_lat_b (>1 when B faster)
 
-    if mean_lat_b >= mean_lat_a:
+    lat_equal = math.isclose(mean_lat_a, mean_lat_b, rel_tol=1e-9)
+
+    if lat_equal:
+        comparison = f"{model_b} has the same latency as {model_a}"
+    elif mean_lat_b > mean_lat_a:
         # B is slower
         comparison = f"{model_b} is {ratio_b_over_a} slower than {model_a}"
-        ratio_display = ratio_b_over_a
     else:
         # B is faster -- show how much faster B is relative to A (ratio > 1)
         comparison = f"{model_b} is {ratio_a_over_b} faster than {model_a}"
-        ratio_display = ratio_a_over_b
 
     title = f"Latency: {comparison}"
+    # Use caller-supplied unit so the label matches the data (ms, s, us, etc.)
     how = (
-        f"{model_a} averaged {mean_lat_a:.1f} ms/example; "
-        f"{model_b} averaged {mean_lat_b:.1f} ms/example. "
+        f"{model_a} averaged {mean_lat_a:.1f} {latency_unit}/example; "
+        f"{model_b} averaged {mean_lat_b:.1f} {latency_unit}/example. "
         f"Quality delta: {q_str}."
     )
 
-    if abs(quality_delta) < 1e-9:
-        if mean_lat_b >= mean_lat_a:
+    if lat_equal:
+        # Latency is equal -- recommendation driven purely by quality delta.
+        if abs(quality_delta) < 1e-9:
+            fix = (
+                f"The models are equal on both quality and latency. "
+                f"Either model is a valid choice."
+            )
+        elif quality_delta > 0:
+            fix = (
+                f"The models have the same latency. {model_b} is better on "
+                f"quality ({q_str}) -- prefer {model_b}."
+            )
+        else:
+            fix = (
+                f"The models have the same latency. {model_b} is worse on "
+                f"quality ({q_str}) -- prefer {model_a}."
+            )
+    elif abs(quality_delta) < 1e-9:
+        if mean_lat_b > mean_lat_a:
             fix = (
                 f"The models are equivalent on quality. {model_b} is "
                 f"{ratio_b_over_a} slower -- prefer {model_a}."
