@@ -296,3 +296,182 @@ def test_public_api_quality_only_unchanged():
     report = evaltrust.audit(quality, model_a="A", model_b="B")
     efficiency = [f for f in report.findings if f.pillar == PILLAR]
     assert efficiency == []
+
+
+# ---------------------------------------------------------------------------
+# Bug fixes from CodeRabbit review
+# ---------------------------------------------------------------------------
+
+# --- Bug 1 (Critical): NaN quality_delta must not produce findings ----------
+
+def test_nan_quality_delta_skips_all_findings():
+    """When quality scores are missing for a model, quality_delta is NaN.
+    audit_efficiency must return [] rather than emitting 'nan pt quality drop'
+    or storing a non-JSON-serialisable NaN in details['quality_delta'].
+    """
+    # Build a quality dataset where model B has no scores at all.
+    examples = [Example(id=str(i), scores={"A": 0.8}) for i in range(10)]
+    quality = EvalData(models=["A", "B"], examples=examples,
+                       source_format="test", metadata={})
+    tokens = two_model_cost_data([100] * 10, [300] * 10)
+    latency = two_model_cost_data([200] * 10, [600] * 10)
+
+    findings = audit_efficiency(quality, "A", "B",
+                                token_count_data=tokens, latency_data=latency)
+    assert findings == [], (
+        "NaN quality_delta must cause audit_efficiency to return [] "
+        "rather than emitting malformed findings."
+    )
+
+
+def test_nan_quality_delta_details_not_in_output():
+    """Ensure NaN never reaches details dict (not JSON-serialisable)."""
+    import json
+    import math
+    examples = [Example(id=str(i), scores={"A": 0.8}) for i in range(10)]
+    quality = EvalData(models=["A", "B"], examples=examples,
+                       source_format="test", metadata={})
+    tokens = two_model_cost_data([100] * 10, [300] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    # No finding at all is correct; but if one slipped through, it must be
+    # JSON-serialisable (no NaN).
+    for f in findings:
+        d = f.to_dict()
+        json.dumps(d)  # must not raise
+        assert not math.isnan(f.details.get("quality_delta", 0)), (
+            "quality_delta must not be NaN in Finding.details"
+        )
+
+
+# --- Bug 2 (Minor): _quality_delta_str sign correctness --------------------
+
+def test_quality_delta_str_drop_is_negative():
+    """A quality drop must be shown with a '-' sign, not '+'."""
+    from evaltrust.audit.efficiency import _quality_delta_str
+    result = _quality_delta_str(-0.1)
+    assert result.startswith("-"), (
+        f"Expected '-2.0 pt quality drop', got '{result}'"
+    )
+    assert "drop" in result
+    assert "+" not in result
+
+
+def test_quality_delta_str_gain_is_positive():
+    """A quality gain must be shown with a '+' sign."""
+    from evaltrust.audit.efficiency import _quality_delta_str
+    result = _quality_delta_str(0.1)
+    assert result.startswith("+"), (
+        f"Expected '+10.0 pt quality gain', got '{result}'"
+    )
+    assert "gain" in result
+
+
+def test_quality_delta_str_zero():
+    from evaltrust.audit.efficiency import _quality_delta_str
+    assert _quality_delta_str(0.0) == "no quality change"
+
+
+def test_quality_delta_str_no_unicode_minus():
+    """Docstring promises ASCII hyphen for the minus sign, not Unicode U+2212."""
+    from evaltrust.audit.efficiency import _quality_delta_str
+    result = _quality_delta_str(-0.05)
+    assert "\u2212" not in result, "Must use ASCII '-', not Unicode minus sign U+2212"
+
+
+def test_token_how_to_fix_shows_signed_quality_delta():
+    """The how_to_fix text in a token finding must show a signed delta,
+    e.g. '+10.0 pt quality gain', never '+10.0 pt quality drop'."""
+    quality = make_data([0.9] * 10, [0.7] * 10)  # B is worse: delta = -0.2
+    tokens = two_model_cost_data([100] * 10, [300] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    # Must say 'drop', not 'gain', and must not start with '+' for a drop
+    assert "drop" in tf.how_to_fix.lower()
+    assert "+20.0 pt quality drop" not in tf.how_to_fix  # the old broken output
+
+
+# --- Bug 3 (Critical): token cheaper-branch ratio orientation ---------------
+
+def test_cheaper_token_ratio_reads_greater_than_one():
+    """When B is cheaper, the displayed ratio must be > 1x (e.g. '3x fewer'),
+    not 0.33x, which would read as a slowdown/increase."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    # A=300, B=100 → B uses 1/3 the tokens → should say '3x fewer', not '0.33x'
+    tokens = two_model_cost_data([300] * 10, [100] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    title = tf.title
+    # The ratio in the title must be >= 1x (e.g. '3x fewer')
+    # Extract the ratio number from the title
+    import re
+    match = re.search(r"([\d.]+)x", title)
+    assert match, f"No ratio found in title: '{title}'"
+    ratio_val = float(match.group(1))
+    assert ratio_val >= 1.0, (
+        f"Cheaper-branch ratio must be >= 1 (e.g. '3x fewer'), "
+        f"got {ratio_val}x in: '{title}'"
+    )
+
+
+def test_cheaper_token_title_says_fewer_not_uses():
+    """When B is cheaper the title should read 'fewer tokens', not 'uses Nx the tokens'
+    with N < 1, which is confusing."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    tokens = two_model_cost_data([300] * 10, [100] * 10)
+    findings = audit_efficiency(quality, "A", "B", token_count_data=tokens)
+    (tf,) = by_check(findings, "efficiency_tokens")
+    assert "fewer" in tf.title.lower() or float(
+        __import__("re").search(r"([\d.]+)x", tf.title).group(1)
+    ) >= 1.0
+
+
+# --- Bug 4 (Major): latency faster-branch ratio orientation -----------------
+
+def test_faster_latency_ratio_reads_greater_than_one():
+    """When B is faster, the displayed ratio must be > 1x (e.g. '3x faster'),
+    not 0.33x, which would read as a slowdown."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    # A=600, B=200 → B is 3x faster → should say '3x faster', not '0.33x faster'
+    latency = two_model_cost_data([600] * 10, [200] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    title = lf.title
+    import re
+    match = re.search(r"([\d.]+)x", title)
+    assert match, f"No ratio found in title: '{title}'"
+    ratio_val = float(match.group(1))
+    assert ratio_val >= 1.0, (
+        f"Faster-branch ratio must be >= 1 (e.g. '3x faster'), "
+        f"got {ratio_val}x in: '{title}'"
+    )
+
+
+def test_faster_latency_how_to_fix_ratio_greater_than_one():
+    """The how_to_fix text for the faster-branch must also use a ratio > 1."""
+    quality = make_data([0.7] * 10, [0.9] * 10)  # B better and faster
+    latency = two_model_cost_data([600] * 10, [200] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    import re
+    match = re.search(r"([\d.]+)x", lf.how_to_fix)
+    assert match, f"No ratio found in how_to_fix: '{lf.how_to_fix}'"
+    ratio_val = float(match.group(1))
+    assert ratio_val >= 1.0, (
+        f"Faster-branch how_to_fix ratio must be >= 1, got {ratio_val}x"
+    )
+
+
+def test_slower_latency_ratio_reads_greater_than_one():
+    """When B is slower, the displayed ratio must also be > 1x."""
+    quality = make_data([0.8] * 10, [0.8] * 10)
+    # A=200, B=600 → B is 3x slower
+    latency = two_model_cost_data([200] * 10, [600] * 10)
+    findings = audit_efficiency(quality, "A", "B", latency_data=latency)
+    (lf,) = by_check(findings, "efficiency_latency")
+    import re
+    match = re.search(r"([\d.]+)x", lf.title)
+    assert match, f"No ratio found in title: '{lf.title}'"
+    ratio_val = float(match.group(1))
+    assert ratio_val >= 1.0, (
+        f"Slower-branch ratio must be >= 1, got {ratio_val}x"
+    )

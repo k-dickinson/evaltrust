@@ -1,4 +1,4 @@
-"""Efficiency audit — cost and latency alongside quality.
+"""Efficiency audit -- cost and latency alongside quality.
 
 Advisory-only: the findings never change the verdict level (status is always
 PASS or SKIP).  The pillar is silently absent when no cost or latency data is
@@ -7,14 +7,14 @@ present, so default output for quality-only files is unchanged.
 The findings make the quality/cost tradeoff explicit:
 
   Efficiency
-  ✓  model_b uses 3.2x the tokens for a +4.1 pt quality gain
+  ok   model_b uses 3.2x the tokens of model_a for a +4.1 pt quality gain
 
 rather than leaving it as vague advice text ("decide on cost or speed").
 
 Data flow
 ---------
 The caller passes separate ``EvalData`` objects for token counts and for
-latency, each keyed by model — the same shape as the quality ``EvalData``.
+latency, each keyed by model -- the same shape as the quality ``EvalData``.
 This keeps the quality audit's ``EvalData`` clean and requires no schema
 changes to ``Example``.
 
@@ -24,6 +24,8 @@ those datasets in alongside the quality dataset.
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 
@@ -73,15 +75,23 @@ def audit_efficiency(
     mean_q_b = _mean(quality_data, model_b)
     quality_delta = mean_q_b - mean_q_a  # positive means B is better
 
+    # Guard: if quality_delta is NaN (e.g. preference-only data where _mean
+    # finds no scores for a model), we cannot produce a meaningful tradeoff
+    # narrative and must not emit NaN into details (not JSON-serialisable by
+    # strict parsers).  Treat as "quality data unavailable" and skip both
+    # findings -- the quality audit itself will flag the missing scores.
+    if math.isnan(quality_delta):
+        return findings
+
     if token_count_data is not None:
         f = _token_finding(token_count_data, model_a, model_b,
-                           mean_q_a, mean_q_b, quality_delta)
+                           quality_delta)
         if f is not None:
             findings.append(f)
 
     if latency_data is not None:
         f = _latency_finding(latency_data, model_a, model_b,
-                             mean_q_a, mean_q_b, quality_delta)
+                             quality_delta)
         if f is not None:
             findings.append(f)
 
@@ -97,27 +107,29 @@ def _mean(data: EvalData, model: str) -> float:
     return float(np.mean(vals)) if vals else float("nan")
 
 
-def _ratio_str(a: float, b: float) -> str:
-    """'B uses 3.2x the tokens of A' or 'B uses 0.4x the tokens of A'."""
-    if a == 0:
-        return "∞x"
-    return f"{b / a:.2g}x"
+def _ratio_str(numerator: float, denominator: float) -> str:
+    """Return 'Nx' where N = numerator / denominator, formatted compactly."""
+    if denominator == 0:
+        return "infinitely"
+    return f"{numerator / denominator:.2g}x"
 
 
 def _quality_delta_str(delta: float) -> str:
-    """'+4.1 pt quality gain' or '−2.0 pt quality drop' or 'no quality change'."""
+    """'+4.1 pt quality gain' or '-2.0 pt quality drop' or 'no quality change'.
+
+    Uses the signed delta directly so drops are negative and gains are positive.
+    """
     if abs(delta) < 1e-9:
         return "no quality change"
     direction = "gain" if delta > 0 else "drop"
-    return f"{abs(delta) * 100:+.1f} pt quality {direction}".replace("+", "+")
+    sign = "+" if delta > 0 else "-"
+    return f"{sign}{abs(delta) * 100:.1f} pt quality {direction}"
 
 
 def _token_finding(
     token_data: EvalData,
     model_a: str,
     model_b: str,
-    mean_q_a: float,
-    mean_q_b: float,
     quality_delta: float,
 ) -> Finding | None:
     mean_tok_a = _mean(token_data, model_a)
@@ -126,59 +138,72 @@ def _token_finding(
     if np.isnan(mean_tok_a) or np.isnan(mean_tok_b):
         return None  # data present but no overlap with these models; skip silently
 
-    ratio = _ratio_str(mean_tok_a, mean_tok_b)
     q_str = _quality_delta_str(quality_delta)
 
-    # Pick the direction that reads most naturally.
+    # ratio_b_over_a: how many times more tokens does B use vs A?
+    # > 1 means B is more expensive; < 1 means B is cheaper.
+    ratio_b_over_a = _ratio_str(mean_tok_b, mean_tok_a)  # mean_tok_b / mean_tok_a
+    ratio_a_over_b = _ratio_str(mean_tok_a, mean_tok_b)  # mean_tok_a / mean_tok_b (>1 when B cheaper)
+
     if mean_tok_b >= mean_tok_a:
-        comparison = f"{model_b} uses {ratio} the tokens of {model_a}"
+        # B costs more tokens
+        comparison = f"{model_b} uses {ratio_b_over_a} the tokens of {model_a}"
+        ratio_display = ratio_b_over_a
     else:
-        inv = _ratio_str(mean_tok_b, mean_tok_a)
-        comparison = f"{model_b} uses {inv} the tokens of {model_a} (cheaper)"
+        # B is cheaper -- show how much cheaper B is relative to A (ratio > 1)
+        comparison = f"{model_b} uses {ratio_a_over_b} fewer tokens than {model_a}"
+        ratio_display = ratio_a_over_b
 
     title = f"Token cost: {comparison}"
     how = (
         f"{model_a} averaged {mean_tok_a:.1f} tokens/example; "
-        f"{model_b} averaged {mean_tok_b:.1f} tokens/example "
-        f"({ratio} ratio). Quality delta: {q_str}."
+        f"{model_b} averaged {mean_tok_b:.1f} tokens/example. "
+        f"Quality delta: {q_str}."
     )
 
     if abs(quality_delta) < 1e-9:
-        fix = (
-            f"The models are equivalent on quality. {model_b} costs "
-            f"{ratio} the tokens — prefer the cheaper one."
-        )
+        if mean_tok_b >= mean_tok_a:
+            fix = (
+                f"The models are equivalent on quality. {model_b} costs "
+                f"{ratio_b_over_a} the tokens -- prefer {model_a}."
+            )
+        else:
+            fix = (
+                f"The models are equivalent on quality. {model_b} uses "
+                f"{ratio_a_over_b} fewer tokens -- prefer {model_b}."
+            )
     elif quality_delta > 0:
-        # B is better quality
+        # B is better on quality
         if mean_tok_b > mean_tok_a:
             fix = (
                 f"{model_b} is better on quality ({q_str}) but costs "
-                f"{ratio} the tokens. Decide whether the quality gain "
-                f"justifies the extra cost."
+                f"{ratio_b_over_a} the tokens. Decide whether the quality "
+                f"gain justifies the extra cost."
             )
         else:
             fix = (
-                f"{model_b} is both better on quality ({q_str}) and "
-                f"cheaper on tokens. Prefer {model_b}."
+                f"{model_b} is both better on quality ({q_str}) and uses "
+                f"{ratio_a_over_b} fewer tokens. Prefer {model_b}."
             )
     else:
-        # B is worse quality
+        # B is worse on quality
         if mean_tok_b > mean_tok_a:
             fix = (
-                f"{model_b} is worse on quality ({q_str}) and costs more "
-                f"({ratio} the tokens). Prefer {model_a}."
+                f"{model_b} is worse on quality ({q_str}) and costs "
+                f"{ratio_b_over_a} the tokens. Prefer {model_a}."
             )
         else:
             fix = (
-                f"{model_b} is worse on quality ({q_str}) but cheaper "
-                f"({ratio} the tokens). Decide whether the cost saving "
-                f"justifies the quality drop."
+                f"{model_b} is worse on quality ({q_str}) but uses "
+                f"{ratio_a_over_b} fewer tokens. Decide whether the cost "
+                f"saving justifies the quality drop."
             )
 
+    tok_ratio = mean_tok_b / mean_tok_a if mean_tok_a != 0 else None
     return Finding(
         pillar=PILLAR,
         title=title,
-        status=Status.PASS,  # advisory — never lowers the verdict
+        status=Status.PASS,  # advisory -- never lowers the verdict
         why=(
             "A model that is marginally better on quality but uses significantly "
             "more tokens may not be worth the extra cost in production. Showing "
@@ -192,8 +217,7 @@ def _token_finding(
             "model_b": model_b,
             "mean_tokens_a": mean_tok_a,
             "mean_tokens_b": mean_tok_b,
-            "token_ratio_b_over_a": (mean_tok_b / mean_tok_a
-                                     if mean_tok_a != 0 else None),
+            "token_ratio_b_over_a": tok_ratio,
             "quality_delta": quality_delta,
         },
     )
@@ -203,8 +227,6 @@ def _latency_finding(
     latency_data: EvalData,
     model_a: str,
     model_b: str,
-    mean_q_a: float,
-    mean_q_b: float,
     quality_delta: float,
 ) -> Finding | None:
     mean_lat_a = _mean(latency_data, model_a)
@@ -213,57 +235,71 @@ def _latency_finding(
     if np.isnan(mean_lat_a) or np.isnan(mean_lat_b):
         return None
 
-    ratio = _ratio_str(mean_lat_a, mean_lat_b)
     q_str = _quality_delta_str(quality_delta)
 
+    # ratio_b_over_a: how many times slower is B vs A?
+    # > 1 means B is slower; < 1 means B is faster.
+    ratio_b_over_a = _ratio_str(mean_lat_b, mean_lat_a)  # mean_lat_b / mean_lat_a
+    ratio_a_over_b = _ratio_str(mean_lat_a, mean_lat_b)  # mean_lat_a / mean_lat_b (>1 when B faster)
+
     if mean_lat_b >= mean_lat_a:
-        comparison = f"{model_b} is {ratio} slower than {model_a}"
+        # B is slower
+        comparison = f"{model_b} is {ratio_b_over_a} slower than {model_a}"
+        ratio_display = ratio_b_over_a
     else:
-        inv = _ratio_str(mean_lat_b, mean_lat_a)
-        comparison = f"{model_b} is {inv} faster than {model_a}"
+        # B is faster -- show how much faster B is relative to A (ratio > 1)
+        comparison = f"{model_b} is {ratio_a_over_b} faster than {model_a}"
+        ratio_display = ratio_a_over_b
 
     title = f"Latency: {comparison}"
     how = (
         f"{model_a} averaged {mean_lat_a:.1f} ms/example; "
-        f"{model_b} averaged {mean_lat_b:.1f} ms/example "
-        f"({ratio} ratio). Quality delta: {q_str}."
+        f"{model_b} averaged {mean_lat_b:.1f} ms/example. "
+        f"Quality delta: {q_str}."
     )
 
     if abs(quality_delta) < 1e-9:
-        fix = (
-            f"The models are equivalent on quality. {model_b} is "
-            f"{ratio} {'slower' if mean_lat_b >= mean_lat_a else 'faster'} "
-            f"— prefer the faster one."
-        )
+        if mean_lat_b >= mean_lat_a:
+            fix = (
+                f"The models are equivalent on quality. {model_b} is "
+                f"{ratio_b_over_a} slower -- prefer {model_a}."
+            )
+        else:
+            fix = (
+                f"The models are equivalent on quality. {model_b} is "
+                f"{ratio_a_over_b} faster -- prefer {model_b}."
+            )
     elif quality_delta > 0:
+        # B is better on quality
         if mean_lat_b > mean_lat_a:
             fix = (
-                f"{model_b} is better on quality ({q_str}) but "
-                f"{ratio} slower. Decide whether the latency increase "
-                f"is acceptable for the quality gain."
+                f"{model_b} is better on quality ({q_str}) but {ratio_b_over_a} "
+                f"slower. Decide whether the latency increase is acceptable "
+                f"for the quality gain."
             )
         else:
             fix = (
                 f"{model_b} is both better on quality ({q_str}) and "
-                f"faster. Prefer {model_b}."
+                f"{ratio_a_over_b} faster. Prefer {model_b}."
             )
     else:
+        # B is worse on quality
         if mean_lat_b > mean_lat_a:
             fix = (
-                f"{model_b} is worse on quality ({q_str}) and slower "
-                f"({ratio}). Prefer {model_a}."
+                f"{model_b} is worse on quality ({q_str}) and {ratio_b_over_a} "
+                f"slower. Prefer {model_a}."
             )
         else:
             fix = (
-                f"{model_b} is worse on quality ({q_str}) but faster "
-                f"({ratio}). Decide whether the speed gain justifies "
-                f"the quality drop."
+                f"{model_b} is worse on quality ({q_str}) but {ratio_a_over_b} "
+                f"faster. Decide whether the speed gain justifies the quality drop."
             )
 
+    lat_ratio = mean_lat_b / mean_lat_a if mean_lat_a != 0 else None
     return Finding(
         pillar=PILLAR,
         title=title,
-        status=Status.PASS,  # advisory — never lowers the verdict
+        status=Status.PASS,  # advisory -- never lowers the verdict
         why=(
             "A model that is marginally better on quality but noticeably slower "
             "may hurt user experience in latency-sensitive deployments. Showing "
@@ -277,8 +313,7 @@ def _latency_finding(
             "model_b": model_b,
             "mean_latency_a": mean_lat_a,
             "mean_latency_b": mean_lat_b,
-            "latency_ratio_b_over_a": (mean_lat_b / mean_lat_a
-                                       if mean_lat_a != 0 else None),
+            "latency_ratio_b_over_a": lat_ratio,
             "quality_delta": quality_delta,
         },
     )
