@@ -163,6 +163,30 @@ path picks a correctness metric (`exact_match`, `quasi_exact_match`, ...).
 HELM's bookkeeping stats (`num_trials`, `num_prompt_tokens`, `finish_reason_*`,
 ...) are dropped so a suite audit only holds real quality metrics.
 
+### Lighteval (Hugging Face)
+
+EvalTrust accepts JSON representations of Lighteval per-sample details (a list
+of records, or a task-keyed dict of those lists). Each record has a document
+(`doc` or `__doc__`, with `query` / `choices` / `gold_index`, and usually `id` /
+`task_name`), a metric dict (`metric` or `__metric__`), and optionally a model
+response (`model_response` or `__model_response__`). Both the names observed in
+recent official reference Parquet exports and the underscore-prefixed names in
+the current public Hugging Face documentation are supported. Native Parquet is
+not read; convert `details_*.parquet` to this JSON shape first. Detection is
+structural, never by filename.
+
+A Lighteval run covers one model, so compare two details exports:
+
+```bash
+evaltrust audit lighteval_details_a.json lighteval_details_b.json
+```
+
+**Limitation:** the aggregate `results_{timestamp}.json`
+(`config_general` / `results` / `config_tasks`) has only task-level summaries.
+EvalTrust detects that shape and raises a clear error rather than inventing
+per-example rows. Convert `details_*.parquet` to the JSON detail shape above
+before auditing.
+
 ### Nested JSON
 
 A structured object with a list of examples, each carrying per-model scores:
@@ -311,8 +335,8 @@ without a `metric` column is treated as a single metric, exactly as before. See
 ## Single-model tools (two-file comparison)
 
 Some tools - DeepEval, Langfuse, LangSmith, Ragas, OpenEvals, Inspect, HELM,
-OpenAI Evals - evaluate one model per run, so a single export contains only one
-model. Run each model, then pass both files:
+Lighteval, MLflow evaluate, OpenAI Evals - evaluate one model per run, so a
+single export contains only one model. Run each model, then pass both files:
 
 ```bash
 evaltrust audit gpt4_run.json claude_run.json

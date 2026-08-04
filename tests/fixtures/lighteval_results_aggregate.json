@@ -1,0 +1,206 @@
+{
+  "config_general": {
+    "lighteval_sha": "01bd59882e01ab82971e6ab07c7c39c69ab8664b",
+    "num_fewshot_seeds": 1,
+    "max_samples": 10,
+    "job_id": "0",
+    "start_time": 4878719.033134899,
+    "end_time": 4878749.286077319,
+    "total_evaluation_time_secondes": "30.252942419610918",
+    "model_config": {
+      "model_name": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "generation_parameters": {
+        "num_blocks": null,
+        "block_size": null,
+        "early_stopping": null,
+        "repetition_penalty": null,
+        "frequency_penalty": null,
+        "length_penalty": null,
+        "presence_penalty": null,
+        "max_new_tokens": null,
+        "min_new_tokens": null,
+        "seed": null,
+        "stop_tokens": null,
+        "temperature": 0.0,
+        "top_k": null,
+        "min_p": null,
+        "top_p": 0.9,
+        "truncate_prompt": null,
+        "cache_implementation": null,
+        "response_format": null
+      },
+      "system_prompt": null,
+      "cache_dir": "~/.cache/huggingface/lighteval",
+      "tokenizer": null,
+      "subfolder": null,
+      "revision": "57aa3c6599c53705406c648e7acca7e11dc45ea3",
+      "batch_size": 1,
+      "max_length": null,
+      "model_loading_kwargs": {
+        "attn_implementation": "eager"
+      },
+      "add_special_tokens": true,
+      "skip_special_tokens": true,
+      "model_parallel": false,
+      "dtype": "float16",
+      "device": "cuda",
+      "trust_remote_code": false,
+      "compile": false,
+      "multichoice_continuations_start_space": null,
+      "pairwise_tokenization": false,
+      "continuous_batching": false,
+      "override_chat_template": null
+    },
+    "model_name": "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+  },
+  "results": {
+    "arc:challenge|25": {
+      "acc": 0.4,
+      "acc_stderr": 0.16329931618554522
+    },
+    "bigbench_hard:ruin_names|3": {
+      "acc": 0.1,
+      "acc_stderr": 0.09999999999999999
+    },
+    "all": {
+      "acc": 0.29545454545454547,
+      "acc_stderr": 0.11711038848327954,
+      "truthfulqa_mc1": 0.2,
+      "truthfulqa_mc1_stderr": 0.13333333333333333,
+      "truthfulqa_mc2": 0.48125721389542864,
+      "truthfulqa_mc2_stderr": 0.13930231370271956,
+      "extractive_match": 0.5,
+      "extractive_match_stderr": 0.16666666666666666,
+      "em": 0.5,
+      "em_stderr": 0.15739057099901865
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "arc:challenge|25": {
+      "name": "arc:challenge",
+      "prompt_function": "arc",
+      "hf_repo": "allenai/ai2_arc",
+      "hf_subset": "ARC-Challenge",
+      "metrics": [
+        {
+          "metric_name": "acc",
+          "higher_is_better": true,
+          "category": "LOGPROBS",
+          "sample_level_fn": "LoglikelihoodAcc(logprob_normalization=None)",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "solver": null,
+      "scorer": null,
+      "sample_fields": null,
+      "sample_to_fewshot": null,
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "train",
+        "test"
+      ],
+      "evaluation_splits": [
+        "test"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": "random_sampling_from_train",
+      "generation_size": 1,
+      "generation_grammar": null,
+      "stop_sequence": [
+        "\n"
+      ],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 25,
+      "version": 0
+    },
+    "bigbench_hard:ruin_names|3": {
+      "name": "bigbench_hard:ruin_names",
+      "prompt_function": "bbh_lighteval",
+      "hf_repo": "lighteval/bbh",
+      "hf_subset": "ruin_names",
+      "metrics": [
+        {
+          "metric_name": "acc",
+          "higher_is_better": true,
+          "category": "LOGPROBS",
+          "sample_level_fn": "LoglikelihoodAcc(logprob_normalization=None)",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "solver": null,
+      "scorer": null,
+      "sample_fields": null,
+      "sample_to_fewshot": null,
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "train"
+      ],
+      "evaluation_splits": [
+        "train"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": null,
+      "generation_size": -1,
+      "generation_grammar": null,
+      "stop_sequence": [
+        "</s>",
+        "Q=",
+        "\n\n"
+      ],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 3,
+      "version": 0
+    }
+  },
+  "summary_tasks": {
+    "arc:challenge|25": {
+      "hashes": {
+        "hash_examples": "0f147b3f7931a7ed",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "3c2c9fdc04d335b2",
+        "hash_cont_tokens": "db8f2aba7bbd27e3"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    },
+    "bigbench_hard:ruin_names|3": {
+      "hashes": {
+        "hash_examples": "a17e9634a21f6d7a",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "1c924f607a3f005a",
+        "hash_cont_tokens": "5ae0849cc03dab66"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "68b0b3cbd628cac8",
+      "hash_full_prompts": "6c276b4f520c3deb",
+      "hash_input_tokens": "7b2896e8f6925563",
+      "hash_cont_tokens": "896954fbadfda3b1"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  }
+}
