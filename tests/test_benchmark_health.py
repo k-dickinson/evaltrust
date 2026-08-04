@@ -128,17 +128,29 @@ def test_scale_sanity_warns_when_most_scores_are_unit_scaled_with_large_values()
 
     assert finding.status is Status.WARN
     assert finding.details["trigger_reason"] == "mostly_unit_with_large_values"
+    assert finding.how_to_fix == (
+        "Normalize scores to a shared scale before comparing models. Set "
+        "score_ceiling separately when saturation has a known upper bound."
+    )
     assert finding.details["observed_ranges"] == {
         "score": {"min": 0.1, "max": 75.0, "n": 10},
     }
 
 
 def test_scale_sanity_warns_when_most_scores_are_percent_scaled_with_unit_values():
-    data = make_single_model_data([50, 75, 100] * 10 + [0, 1])
+    data = make_single_model_data([50, 75, 100] * 10 + [0.2, 0.8])
     finding = by_check(audit_benchmark_health(data), "scale_sanity")
 
     assert finding.status is Status.WARN
     assert finding.details["trigger_reason"] == "mostly_percent_with_unit_values"
+
+
+def test_scale_sanity_passes_clean_zero_to_one_hundred_scores():
+    data = make_single_model_data(range(101))
+    finding = by_check(audit_benchmark_health(data), "scale_sanity")
+
+    assert finding.status is Status.PASS
+    assert finding.details["trigger_reason"] is None
 
 
 def test_scale_sanity_passes_an_ordinary_zero_to_five_rubric():

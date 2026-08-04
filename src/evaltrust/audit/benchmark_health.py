@@ -155,19 +155,19 @@ def _scale_sanity(pooled, observed_ranges=None) -> Finding:
             trigger_reason = "metric_maxima_ratio"
 
     if trigger_reason is None and finite.size >= 2:
-        unit_count = int(np.count_nonzero(
-            (finite >= 0) & (finite <= SCALE_UNIT_MAX)
+        fractional_unit_count = int(np.count_nonzero(
+            (finite > 0) & (finite < SCALE_UNIT_MAX)
         ))
         percent_count = int(np.count_nonzero(
             (finite > SCALE_PERCENT_MIN) & (finite <= SCALE_PERCENT_MAX)
         ))
-        unit_fraction = unit_count / finite.size
+        fractional_unit_fraction = fractional_unit_count / finite.size
         percent_fraction = percent_count / finite.size
 
-        if percent_count and unit_fraction >= SCALE_MASS_FRACTION:
+        if percent_count and fractional_unit_fraction >= SCALE_MASS_FRACTION:
             trigger_reason = "mostly_unit_with_large_values"
         elif (
-            unit_count >= 2
+            fractional_unit_count >= 2
             and percent_fraction >= SCALE_MASS_FRACTION
             and float(finite.max()) >= SCALE_MAX_RATIO
         ):
@@ -185,9 +185,9 @@ def _scale_sanity(pooled, observed_ranges=None) -> Finding:
         for metric, bounds in ranges.items()
     ) or "none"
     rule = (
-        "Warn when positive metric maxima differ by at least 20x, or at least "
-        "80% of one metric is on a 0-1 or 0-100-shaped scale with values on "
-        "the other scale."
+        "Warn when positive metric maxima differ by at least 20x, or when at "
+        "least 80% of one metric is strictly between 0 and 1 or between 1.5 "
+        "and 100, with values from the other range also present."
     )
 
     return Finding(
@@ -206,8 +206,8 @@ def _scale_sanity(pooled, observed_ranges=None) -> Finding:
         ),
         how_detected=f"{rule} Observed ranges: {range_text}.",
         how_to_fix=(
-            "Normalize scores to a shared scale, or set score_ceiling to the "
-            "true upper bound before comparing saturation."
+            "Normalize scores to a shared scale before comparing models. Set "
+            "score_ceiling separately when saturation has a known upper bound."
             if status is Status.WARN else
             "Keep score scales consistent and set score_ceiling when a rubric "
             "has a fixed upper bound."
