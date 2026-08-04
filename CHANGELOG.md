@@ -43,6 +43,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fleiss' kappa input validation.** Single-rater tables now raise a clear `ValueError` instead of returning `nan` with a `RuntimeWarning` (#151).
 
 ### Added
+- **Ordinal effect sizes.** Detect integer rating scales with 3 to 10 observed levels, report matched-pairs rank-biserial correlation plus probability of superiority instead of Cohen's d, and advance the methodology version to 1.1 (#166).
 - **MLflow evaluate adapter.** Read the per-row `eval_results_table` that
   `mlflow.evaluate()` logs (`{"columns": [...], "data": [[...]]}`, also accepted
   wrapped as `{"eval_results_table": ...}`): each MLflow metric column

@@ -3,6 +3,7 @@
 Three findings: decision (significant / equivalent / inconclusive), effect_size,
 and precision. Pass/fail data uses McNemar plus a proportion effect size;
 continuous scores use a permutation test plus Cohen's d.
+Ordinal scores keep the permutation test and use paired rank effect sizes.
 """
 
 from __future__ import annotations
@@ -15,6 +16,10 @@ from ..stats.effect import (
     cohens_d_paired_along_rows,
     cohens_h,
     magnitude_label,
+    magnitude_label_rank_r,
+    probability_of_superiority_paired,
+    rank_biserial_paired,
+    rank_biserial_paired_along_rows,
 )
 from ..stats.paired import mcnemar_exact
 from ..stats.power import minimum_detectable_effect, required_n
@@ -27,6 +32,8 @@ from ..stats.resampling import (
 )
 
 PILLAR = "Statistical Validity"
+_MAX_ORDINAL_LEVELS = 10
+_INTEGER_SCORE_ATOL = 1e-9
 
 
 def audit_statistical_validity(
@@ -58,7 +65,14 @@ def audit_statistical_validity(
     else:
         leader, trailer, diffs = model_a, model_b, -raw
 
-    binary = _is_binary(data, model_a, model_b)
+    score_values = _score_values(data, model_a, model_b)
+    binary = _is_binary(data, model_a, model_b, values=score_values)
+    ordinal_levels = _ordinal_levels(
+        data, model_a, model_b, values=score_values
+    )
+    ordinal = not binary and _is_ordinal(
+        data, model_a, model_b, levels=ordinal_levels
+    )
     clustered = data.has_clusters
     cluster_note = (
         " (examples treated as independent — supply a group_id per example "
@@ -130,19 +144,58 @@ def audit_statistical_validity(
     return [
         _decision(outcome, p, alpha, test_name, test_detail, lo, hi, confidence,
                   equivalence_margin, leader, trailer),
-        _effect_size(data, diffs, binary, leader, trailer,
+        _effect_size(data, diffs, binary, ordinal, ordinal_levels, leader, trailer,
                      confidence, n_resamples, seed),
         _precision(outcome, n, alpha, power_target, smallest_meaningful_effect),
     ]
 
 
-def _is_binary(data: EvalData, model_a: str, model_b: str) -> bool:
+def _is_binary(
+    data: EvalData,
+    model_a: str,
+    model_b: str,
+    *,
+    values: np.ndarray | None = None,
+) -> bool:
+    vals = _score_values(data, model_a, model_b) if values is None else values
+    return bool(vals.size) and set(np.unique(vals)).issubset({0.0, 1.0})
+
+
+def _score_values(data: EvalData, model_a: str, model_b: str) -> np.ndarray:
     vals = []
     for ex in data.examples:
         for m in (model_a, model_b):
             if m in ex.scores:
                 vals.append(ex.scores[m])
-    return bool(vals) and set(np.unique(vals)).issubset({0.0, 1.0})
+    return np.asarray(vals, dtype=float)
+
+
+def _ordinal_levels(
+    data: EvalData,
+    model_a: str,
+    model_b: str,
+    *,
+    values: np.ndarray | None = None,
+) -> np.ndarray:
+    vals = _score_values(data, model_a, model_b) if values is None else values
+    if not vals.size or not np.all(np.isfinite(vals)):
+        return np.asarray([], dtype=float)
+    rounded = np.rint(vals)
+    if not np.all(np.isclose(vals, rounded, rtol=0.0, atol=_INTEGER_SCORE_ATOL)):
+        return np.asarray([], dtype=float)
+    return np.unique(rounded)
+
+
+def _is_ordinal(
+    data: EvalData,
+    model_a: str,
+    model_b: str,
+    *,
+    levels: np.ndarray | None = None,
+) -> bool:
+    if levels is None:
+        levels = _ordinal_levels(data, model_a, model_b)
+    return 3 <= levels.size <= _MAX_ORDINAL_LEVELS
 
 
 def _discordant_counts(data, leader, trailer) -> tuple[int, int]:
@@ -211,7 +264,7 @@ def _fmt_bound(x: float) -> str:
     return f"{x:+.3f}"
 
 
-def _effect_size(data, diffs, binary, leader, trailer,
+def _effect_size(data, diffs, binary, ordinal, ordinal_levels, leader, trailer,
                  confidence=0.95, n_resamples=10_000, seed=0) -> Finding:
     conf_pct = f"{confidence * 100:g}"
     if binary:
@@ -234,6 +287,34 @@ def _effect_size(data, diffs, binary, leader, trailer,
         details = {"check": "effect_size", "risk_difference": rd,
                    "cohens_h": h, "magnitude": magnitude,
                    "ci_low": rd_lo, "ci_high": rd_hi}
+    elif ordinal:
+        rank_biserial = rank_biserial_paired(diffs)
+        prob_superiority = probability_of_superiority_paired(diffs)
+        magnitude = magnitude_label_rank_r(rank_biserial)
+        r_lo, r_hi = bootstrap_statistic_ci(
+            diffs, rank_biserial_paired_along_rows,
+            confidence=confidence, n_resamples=n_resamples, seed=seed)
+        scale_levels = int(ordinal_levels.size)
+        separator = "-" if ordinal_levels[0] >= 0 else " to "
+        scale_range = (
+            f"{ordinal_levels[0]:g}{separator}{ordinal_levels[-1]:g}"
+        )
+        how = (
+            f"Ordinal {scale_range} scale detected; rank-based effect used because "
+            "rating gaps are not interval. Matched-pairs rank-biserial r was "
+            f"{rank_biserial:+.3f} ({conf_pct}% CI [{r_lo:+.3f}, {r_hi:+.3f}]), "
+            f"a {magnitude} effect. Probability of superiority was "
+            f"{prob_superiority:.1%}, with ties receiving half credit."
+        )
+        details = {
+            "check": "effect_size",
+            "rank_biserial": rank_biserial,
+            "prob_superiority": prob_superiority,
+            "magnitude": magnitude,
+            "ci_low": r_lo,
+            "ci_high": r_hi,
+            "scale_levels": scale_levels,
+        }
     else:
         d = cohens_d_paired(diffs)
         magnitude = magnitude_label(d)

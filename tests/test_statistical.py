@@ -3,8 +3,8 @@
 The audit produces three findings:
   - decision:   is there a real, meaningful improvement? (significant /
                 equivalent / inconclusive) — never a blunt "not significant = fail"
-  - effect_size: how big is it, in interpretable terms (Cohen's d, or a proportion
-                effect size for binary data)
+  - effect_size: how big is it, in interpretable terms (Cohen's d, a paired rank
+                 effect for ordinal data, or a proportion effect for binary data)
   - precision:  was the sample large enough, framed prospectively (minimum
                 detectable effect), not as post-hoc power
 """
@@ -12,7 +12,7 @@ The audit produces three findings:
 import numpy as np
 import pytest
 
-from evaltrust.audit.statistical import audit_statistical_validity
+from evaltrust.audit.statistical import _is_ordinal, audit_statistical_validity
 from evaltrust.core.schema import EvalData, Example, Status
 
 
@@ -109,6 +109,153 @@ def test_continuous_effect_size_reports_a_confidence_interval():
     assert (effect.details["ci_low"] <= effect.details["cohens_d"]
             <= effect.details["ci_high"])
     assert "CI" in effect.how_detected
+
+
+def test_ordinal_scores_use_a_rank_based_effect_size():
+    # All five rating levels appear. Nine +1 differences, two -4 differences,
+    # and one tie make Cohen's d negligible (0.043) but matched-pairs
+    # rank-biserial r medium (0.364). The labels disagree because d treats the
+    # gaps between rating levels as interval measurements.
+    a = [3] * 9 + [5] * 2 + [2]
+    b = [4] * 9 + [1] * 2 + [2]
+    diffs = np.asarray(b, dtype=float) - np.asarray(a, dtype=float)
+    interval_d = float(diffs.mean() / diffs.std(ddof=1))
+    assert interval_d == pytest.approx(0.04320808050951859)
+
+    findings = audit_statistical_validity(
+        make_data(a, b), "A", "B", seed=0, n_resamples=500
+    )
+    effect = by_check(findings, "effect_size")
+
+    assert len(findings) == 3
+    assert "cohens_d" not in effect.details
+    assert effect.details["rank_biserial"] == pytest.approx(4 / 11)
+    assert effect.details["prob_superiority"] == pytest.approx(19 / 24)
+    assert effect.details["magnitude"] == "medium"
+    assert effect.details["scale_levels"] == 5
+    assert effect.status is Status.PASS
+    assert "ordinal 1-5 scale detected" in effect.how_detected.lower()
+    assert "rating gaps are not interval" in effect.how_detected.lower()
+
+
+@pytest.mark.parametrize("level_count", [3, 10])
+def test_ordinal_detection_includes_three_to_ten_integer_levels(level_count):
+    levels = np.arange(1, level_count + 1, dtype=float)
+    a = np.tile(levels, 3)
+    b = np.roll(a, 1)
+
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(a, b), "A", "B", seed=0, n_resamples=200
+        ),
+        "effect_size",
+    )
+
+    assert "rank_biserial" in effect.details
+    assert effect.details["scale_levels"] == level_count
+
+
+def test_ordinal_detection_accepts_integer_values_within_float_tolerance():
+    a = np.tile([1.0 + 5e-10, 2.0, 3.0], 10)
+    b = np.roll(a, 1)
+
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(a, b), "A", "B", seed=0, n_resamples=200
+        ),
+        "effect_size",
+    )
+
+    assert "rank_biserial" in effect.details
+    assert effect.details["scale_levels"] == 3
+
+
+def test_negative_ordinal_scale_range_is_unambiguous():
+    a = np.tile([-2, -1, 0, 1, 2], 4)
+    b = np.roll(a, 1)
+
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(a, b), "A", "B", seed=0, n_resamples=200
+        ),
+        "effect_size",
+    )
+
+    assert "Ordinal -2 to 2 scale detected" in effect.how_detected
+
+
+@pytest.mark.parametrize("nonfinite", [np.inf, -np.inf, np.nan])
+def test_nonfinite_scores_do_not_route_as_ordinal(nonfinite):
+    data = make_data([1, 2, nonfinite], [2, 1, 1])
+
+    assert not _is_ordinal(data, "A", "B")
+
+
+def test_more_than_ten_integer_levels_keep_continuous_effect_handling():
+    a = np.arange(12, dtype=float)
+    b = np.roll(a, 1)
+
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(a, b), "A", "B", seed=0, n_resamples=200
+        ),
+        "effect_size",
+    )
+
+    assert "cohens_d" in effect.details
+    assert "rank_biserial" not in effect.details
+
+
+def test_small_noninteger_scale_keeps_continuous_effect_handling():
+    a = np.tile([1.0, 2.5, 4.0], 10)
+    b = np.roll(a, 1)
+
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(a, b), "A", "B", seed=0, n_resamples=200
+        ),
+        "effect_size",
+    )
+
+    assert "cohens_d" in effect.details
+    assert "rank_biserial" not in effect.details
+
+
+def test_ordinal_effect_size_ci_is_deterministic():
+    data = make_data([3] * 9 + [5] * 2 + [2], [4] * 9 + [1] * 2 + [2])
+    effect_1 = by_check(
+        audit_statistical_validity(
+            data, "A", "B", seed=166, n_resamples=500
+        ),
+        "effect_size",
+    )
+    effect_2 = by_check(
+        audit_statistical_validity(
+            data, "A", "B", seed=166, n_resamples=500
+        ),
+        "effect_size",
+    )
+    assert effect_1.details == effect_2.details
+
+
+def test_all_tied_ordinal_scores_have_defined_rank_effects():
+    scores = np.tile([1, 2, 3, 4, 5], 4)
+    effect = by_check(
+        audit_statistical_validity(
+            make_data(scores, scores),
+            "A",
+            "B",
+            seed=0,
+            n_resamples=200,
+        ),
+        "effect_size",
+    )
+
+    assert effect.details["rank_biserial"] == 0.0
+    assert effect.details["prob_superiority"] == 0.5
+    assert effect.details["ci_low"] == 0.0
+    assert effect.details["ci_high"] == 0.0
+    assert effect.details["magnitude"] == "negligible"
 
 
 def test_ci_percentage_preserves_fractional_confidence_levels():
