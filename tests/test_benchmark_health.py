@@ -20,7 +20,9 @@ def by_check(findings, check):
 
 def test_produces_saturation_and_discrimination_checks():
     findings = audit_benchmark_health(make_data([1, 0] * 20, [1, 1] * 20))
-    assert {f.details["check"] for f in findings} == {"saturation", "discrimination"}
+    assert {f.details["check"] for f in findings} == {
+        "saturation", "discrimination", "scale_sanity",
+    }
 
 
 def test_saturated_benchmark_warns():
@@ -109,3 +111,47 @@ def test_no_ceiling_uses_observed_max_and_labels_it():
     sat = by_check(audit_benchmark_health(data), "saturation")
     assert sat.details["ceiling_source"] == "observed"
     assert sat.details["ceiling"] == sat.details["observed_max"]
+
+
+def make_single_model_data(scores):
+    examples = [
+        Example(id=str(i), scores={"A": float(score)})
+        for i, score in enumerate(scores)
+    ]
+    return EvalData(models=["A"], examples=examples,
+                    source_format="test", metadata={})
+
+
+def test_scale_sanity_warns_when_most_scores_are_unit_scaled_with_large_values():
+    data = make_single_model_data([0.1, 0.2, 0.3, 0.4] * 2 + [0.8, 75.0])
+    finding = by_check(audit_benchmark_health(data), "scale_sanity")
+
+    assert finding.status is Status.WARN
+    assert finding.details["trigger_reason"] == "mostly_unit_with_large_values"
+    assert finding.details["observed_ranges"] == {
+        "score": {"min": 0.1, "max": 75.0, "n": 10},
+    }
+
+
+def test_scale_sanity_warns_when_most_scores_are_percent_scaled_with_unit_values():
+    data = make_single_model_data([50, 75, 100] * 10 + [0, 1])
+    finding = by_check(audit_benchmark_health(data), "scale_sanity")
+
+    assert finding.status is Status.WARN
+    assert finding.details["trigger_reason"] == "mostly_percent_with_unit_values"
+
+
+def test_scale_sanity_passes_an_ordinary_zero_to_five_rubric():
+    data = make_single_model_data([1, 2, 3, 4, 5] * 4)
+    finding = by_check(audit_benchmark_health(data), "scale_sanity")
+
+    assert finding.status is Status.PASS
+    assert finding.details["trigger_reason"] is None
+
+
+def test_scale_sanity_skips_when_only_one_score_is_available():
+    data = make_single_model_data([0.8])
+    finding = by_check(audit_benchmark_health(data), "scale_sanity")
+
+    assert finding.status is Status.SKIP
+    assert finding.details["trigger_reason"] == "insufficient_data"

@@ -5,6 +5,9 @@ The universal shape underneath every eval tool's output is a stream of
 adapter becomes a thin mapping onto it.
 """
 
+import math
+from fractions import Fraction
+
 import numpy as np
 import pytest
 
@@ -45,6 +48,35 @@ def test_coerce_score_rejects_bare_percent():
 def test_coerce_score_rejects_none():
     with pytest.raises(ValueError):
         coerce_score(None)
+
+
+@pytest.mark.parametrize("raw,reference", [
+    ("3/5", Fraction(3, 5)),
+    (" 3.5 / 7 ", Fraction("3.5") / Fraction(7)),
+    ("4 out of 5", Fraction(4, 5)),
+    (" 4\tOUT   OF\t5 ", Fraction(4, 5)),
+    ("0/5", Fraction(0, 5)),
+    ("6/5", Fraction(6, 5)),
+])
+def test_coerce_score_parses_fraction_scores_against_fraction_reference(raw, reference):
+    assert coerce_score(raw) == pytest.approx(float(reference))
+
+
+@pytest.mark.parametrize("raw", [
+    "5/0", "-1/5", "1/-5", "three/5", "3/five",
+    "-1 out of 5", "1 out of -5", "three out of 5", "3 out of five",
+    "1e2/5", "3 of 5",
+])
+def test_coerce_score_rejects_unsafe_or_unratified_fraction_shapes(raw):
+    with pytest.raises(ValueError) as exc_info:
+        coerce_score(raw)
+    assert str(exc_info.value) == f"Cannot interpret {raw!r} as a score"
+
+
+def test_coerce_score_fraction_extremes_follow_float_semantics_without_crashing():
+    huge_decimal = "9" * 400
+    assert coerce_score(f"1/{huge_decimal}") == 0.0
+    assert math.isinf(coerce_score(f"{huge_decimal}/1"))
 
 
 # ---------------------------------------------------------------------------

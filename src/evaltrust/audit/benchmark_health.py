@@ -15,6 +15,11 @@ PILLAR = "Benchmark Health"
 
 SATURATION_FRACTION = 0.95   # mean >= 95% of the ceiling counts as saturated
 MIN_SPREAD = 0.01            # pooled std below this = no discriminating signal
+SCALE_MAX_RATIO = 20.0       # metric maxima this far apart suggest mixed scales
+SCALE_MASS_FRACTION = 0.80   # dominant unit/percent-shaped mass for one metric
+SCALE_UNIT_MAX = 1.0
+SCALE_PERCENT_MIN = 1.5
+SCALE_PERCENT_MAX = 100.0
 
 
 def audit_benchmark_health(
@@ -23,6 +28,7 @@ def audit_benchmark_health(
     saturation_fraction: float = SATURATION_FRACTION,
     min_spread: float = MIN_SPREAD,
     score_ceiling: float | None = None,
+    observed_ranges: dict[str, dict[str, float | int]] | None = None,
 ) -> list[Finding]:
     models = models or data.models
     per_model = {
@@ -35,6 +41,7 @@ def audit_benchmark_health(
     return [
         _saturation(per_model, pooled, saturation_fraction, score_ceiling),
         _discrimination(pooled, min_spread),
+        _scale_sanity(pooled, observed_ranges),
     ]
 
 
@@ -98,4 +105,120 @@ def _discrimination(pooled, min_spread) -> Finding:
         ),
         details={"check": "discrimination", "pooled_std": spread,
                  "discriminating": discriminating},
+    )
+
+
+def _observed_range(values) -> dict[str, float | int] | None:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return None
+    return {
+        "min": float(finite.min()),
+        "max": float(finite.max()),
+        "n": int(finite.size),
+    }
+
+
+def _scale_sanity(pooled, observed_ranges=None) -> Finding:
+    current_range = _observed_range(pooled)
+    if observed_ranges is None:
+        ranges = {"score": current_range} if current_range is not None else {}
+    else:
+        ranges = {
+            metric: {
+                "min": float(bounds["min"]),
+                "max": float(bounds["max"]),
+                "n": int(bounds["n"]),
+            }
+            for metric, bounds in observed_ranges.items()
+            if int(bounds.get("n", 0)) > 0
+            and np.isfinite(float(bounds["min"]))
+            and np.isfinite(float(bounds["max"]))
+        }
+
+    finite = np.asarray(pooled, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    trigger_reason = None
+    ratio = None
+
+    positive_maxima = [
+        (metric, float(bounds["max"]))
+        for metric, bounds in ranges.items()
+        if float(bounds["max"]) > 0
+    ]
+    if len(positive_maxima) >= 2:
+        smallest = min(value for _, value in positive_maxima)
+        largest = max(value for _, value in positive_maxima)
+        ratio = largest / smallest
+        if ratio >= SCALE_MAX_RATIO:
+            trigger_reason = "metric_maxima_ratio"
+
+    if trigger_reason is None and finite.size >= 2:
+        unit_count = int(np.count_nonzero(
+            (finite >= 0) & (finite <= SCALE_UNIT_MAX)
+        ))
+        percent_count = int(np.count_nonzero(
+            (finite > SCALE_PERCENT_MIN) & (finite <= SCALE_PERCENT_MAX)
+        ))
+        unit_fraction = unit_count / finite.size
+        percent_fraction = percent_count / finite.size
+
+        if percent_count and unit_fraction >= SCALE_MASS_FRACTION:
+            trigger_reason = "mostly_unit_with_large_values"
+        elif (
+            unit_count >= 2
+            and percent_fraction >= SCALE_MASS_FRACTION
+            and float(finite.max()) >= SCALE_MAX_RATIO
+        ):
+            trigger_reason = "mostly_percent_with_unit_values"
+
+    checkable = len(ranges) >= 2 or finite.size >= 2
+    if not checkable:
+        status = Status.SKIP
+        trigger_reason = "insufficient_data"
+    else:
+        status = Status.WARN if trigger_reason is not None else Status.PASS
+
+    range_text = ", ".join(
+        f"{metric} [{bounds['min']:.3g}, {bounds['max']:.3g}]"
+        for metric, bounds in ranges.items()
+    ) or "none"
+    rule = (
+        "Warn when positive metric maxima differ by at least 20x, or at least "
+        "80% of one metric is on a 0-1 or 0-100-shaped scale with values on "
+        "the other scale."
+    )
+
+    return Finding(
+        pillar=PILLAR,
+        title=(
+            "Scores span an unexpected range"
+            if status is Status.WARN else
+            "Score scales look consistent"
+            if status is Status.PASS else
+            "Score scale not assessed"
+        ),
+        status=status,
+        why=(
+            "Mixed or unexpected score scales make saturation and comparisons "
+            "misleading because the same numeric gap can mean different things."
+        ),
+        how_detected=f"{rule} Observed ranges: {range_text}.",
+        how_to_fix=(
+            "Normalize scores to a shared scale, or set score_ceiling to the "
+            "true upper bound before comparing saturation."
+            if status is Status.WARN else
+            "Keep score scales consistent and set score_ceiling when a rubric "
+            "has a fixed upper bound."
+            if status is Status.PASS else
+            "Provide at least two scores, or multiple scored metrics, to check "
+            "whether scales are consistent."
+        ),
+        details={
+            "check": "scale_sanity",
+            "observed_ranges": ranges,
+            "trigger_reason": trigger_reason,
+            "maxima_ratio": ratio,
+        },
     )

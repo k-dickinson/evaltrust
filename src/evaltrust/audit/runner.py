@@ -146,6 +146,7 @@ def run_audit(
     slice_by: str | None = None,
     *,
     significant: bool | None = None,
+    observed_ranges: dict[str, dict[str, float | int]] | None = None,
 ) -> AuditReport:
     # When no config is given, build one from the loose kwargs.
     cfg = config or AuditConfig(alpha=alpha, equivalence_margin=equivalence_margin,
@@ -156,7 +157,7 @@ def run_audit(
     # threshold or a lone model -> single.
     if model_a is not None and model_b is not None:
         return _comparison(data, model_a, model_b, cfg, significant=significant,
-                           slice_by=slice_by)
+                           slice_by=slice_by, observed_ranges=observed_ranges)
     if threshold is not None:
         if data.has_preferences and not any(ex.scores for ex in data.examples):
             raise ValueError(
@@ -171,7 +172,7 @@ def run_audit(
         return _single(data, model_a or data.models[0], None, cfg)
     model_a, model_b = _pick_models(data)
     return _comparison(data, model_a, model_b, cfg, significant=significant,
-                       slice_by=slice_by)
+                       slice_by=slice_by, observed_ranges=observed_ranges)
 
 
 def _strongest(data: EvalData) -> str:
@@ -181,7 +182,7 @@ def _strongest(data: EvalData) -> str:
 
 
 def _comparison(data, model_a, model_b, cfg, significant=None,
-                slice_by=None) -> AuditReport:
+                slice_by=None, observed_ranges=None) -> AuditReport:
     differences = data.differences(model_a, model_b)
     has_pair_scores = any(
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
@@ -241,7 +242,7 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
         findings += audit_benchmark_health(
             data, [model_a, model_b],
             saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread,
-            score_ceiling=cfg.score_ceiling)
+            score_ceiling=cfg.score_ceiling, observed_ranges=observed_ranges)
     else:
         findings.append(_score_skip(
             "Benchmark Health",
