@@ -201,7 +201,7 @@ def _detail_rows(raw) -> list[tuple[dict, str | None]] | None:
         if not raw:
             return None
         if not any(
-            isinstance(row, dict) and _looks_like_detail(row) for row in raw[:10]
+            isinstance(row, dict) and _looks_like_detail(row) for row in raw
         ):
             return None
         return [(row, None) for row in raw if isinstance(row, dict)]
@@ -212,7 +212,7 @@ def _detail_rows(raw) -> list[tuple[dict, str | None]] | None:
     details = raw.get("details")
     if isinstance(details, list) and details:
         if any(
-            isinstance(row, dict) and _looks_like_detail(row) for row in details[:10]
+            isinstance(row, dict) and _looks_like_detail(row) for row in details
         ):
             return [(row, None) for row in details if isinstance(row, dict)]
 
@@ -220,10 +220,10 @@ def _detail_rows(raw) -> list[tuple[dict, str | None]] | None:
     for key, value in raw.items():
         if key in _NON_DETAIL_KEYS:
             continue
-        if not isinstance(value, list) or not value or not isinstance(value[0], dict):
+        if not isinstance(value, list) or not value:
             continue
         if not any(
-            isinstance(row, dict) and _looks_like_detail(row) for row in value[:10]
+            isinstance(row, dict) and _looks_like_detail(row) for row in value
         ):
             continue
         task_hint = str(key) if "|" in str(key) or ":" in str(key) else None
@@ -255,6 +255,12 @@ def _parse_to_records(
         if fields is None:
             skipped += 1
             continue
+        # Revalidate the detail fingerprint on every row: detection of one
+        # valid row must not accept later mappings that lack query/choices/
+        # gold_index.
+        if not all(k in fields.doc for k in ("query", "choices", "gold_index")):
+            skipped += 1
+            continue
 
         ex_id = _example_id(fields.doc, task_hint)
         if ex_id is None:
@@ -262,20 +268,17 @@ def _parse_to_records(
             continue
 
         row_had_record = False
-        bad_metrics = 0
         for name in fields.metric:
             score = _metric_score(fields.metric, name)
             if score is None:
-                if fields.metric.get(name) is not None:
-                    bad_metrics += 1
+                # Ignore *_stderr, null, and unparseable metric values; they
+                # do not count toward skipped_rows.
                 continue
             records.append(Record(ex_id, model, score, metric=str(name)))
             row_had_record = True
 
         if not row_had_record:
             skipped += 1
-        else:
-            skipped += bad_metrics
 
     return records, skipped
 

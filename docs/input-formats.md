@@ -175,6 +175,15 @@ the current public Hugging Face documentation are supported. Native Parquet is
 not read; convert `details_*.parquet` to this JSON shape first. Detection is
 structural, never by filename.
 
+Normalization rules for this adapter:
+
+- Invalid, null, or unparseable metric values are ignored (not raised).
+- Standard-error fields such as `*_stderr` are ignored.
+- Valid metrics preserve input order when fanning out into a suite.
+- Conflicting aliases (for example unequal `doc` and `__doc__`) are treated as
+  malformed and skipped.
+- `skipped_rows` counts skipped input rows, not individual metric fields.
+
 A Lighteval run covers one model, so compare two details exports:
 
 ```bash

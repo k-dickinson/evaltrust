@@ -133,6 +133,15 @@ current public Hugging Face documentation (`__doc__` / `__metric__` /
 `__model_response__`) are accepted. Native Parquet files are not read directly;
 convert them to this JSON shape first.
 
+Normalization rules for this adapter:
+
+- Invalid, null, or unparseable metric values are ignored (not raised).
+- Standard-error fields such as `*_stderr` are ignored.
+- Valid metrics preserve input order when fanning out into a suite.
+- Conflicting aliases (for example unequal `doc` and `__doc__`) are treated as
+  malformed and skipped.
+- `skipped_rows` counts skipped input rows, not individual metric fields.
+
 Example IDs are preserved as `task_name:id` when `task_name` is present.
 Multiple metrics fan out into a suite; the single-audit path prefers common
 correctness metrics such as `acc` / `exact_match` / `em`.

@@ -368,8 +368,120 @@ def test_lighteval_null_and_non_numeric_metrics_not_treated_as_scores():
     assert data.metadata["skipped_rows"] == 1
 
 
+def test_lighteval_valid_metric_plus_stderr_does_not_skip_row():
+    raw = [
+        {
+            "doc": {"query": "Q", "choices": ["A"], "gold_index": 0, "id": "1"},
+            "metric": {"acc": 1.0, "acc_stderr": 0.1},
+        },
+    ]
+    data = LightevalAdapter().parse(raw)
+    assert data.n_examples == 1
+    assert data.examples[0].scores["model"] == 1.0
+    assert data.metadata.get("skipped_rows", 0) == 0
+
+
+def test_lighteval_valid_metric_plus_invalid_field_does_not_skip_row():
+    raw = [
+        {
+            "doc": {"query": "Q", "choices": ["A"], "gold_index": 0, "id": "1"},
+            "metric": {"acc": 1.0, "metadata": "x"},
+        },
+    ]
+    data = LightevalAdapter().parse(raw)
+    assert data.n_examples == 1
+    assert data.examples[0].scores["model"] == 1.0
+    assert data.metadata.get("skipped_rows", 0) == 0
+
+
+def test_lighteval_only_invalid_null_or_stderr_metrics_skip_row_once():
+    raw = [
+        {
+            "doc": {"query": "Q", "choices": ["A"], "gold_index": 0, "id": "1"},
+            "metric": {"acc": None, "notes": "text", "acc_stderr": 0.1},
+        },
+        {
+            "doc": {"query": "Q2", "choices": ["B"], "gold_index": 0, "id": "2"},
+            "metric": {"acc": 0.5},
+        },
+    ]
+    data = LightevalAdapter().parse(raw)
+    assert data.n_examples == 1
+    assert data.metadata["skipped_rows"] == 1
+
+
 def test_lighteval_unsupported_shape_not_detected():
     assert not LightevalAdapter().detect({"doc": {"query": "x"}, "metric": {}})
+
+
+# ---------------------------------------------------------------------------
+# Detail-list detection beyond the first rows
+# ---------------------------------------------------------------------------
+
+
+def _valid_detail(ex_id: str, score: float = 1.0) -> dict:
+    return {
+        "doc": {
+            "query": f"Q{ex_id}?",
+            "choices": ["A", "B"],
+            "gold_index": 0,
+            "id": ex_id,
+            "task_name": "gsm8k|0",
+        },
+        "metric": {"acc": score},
+    }
+
+
+def test_lighteval_detects_valid_row_after_ten_malformed():
+    # Rows 1–10 unusable; row 11 establishes the Lighteval shape.
+    raw = [{"not": "detail"} for _ in range(10)] + [_valid_detail("late")]
+    assert LightevalAdapter().detect(raw)
+    data = LightevalAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["gsm8k|0:late"]
+    # Ten non-detail mappings are counted as skipped input rows.
+    assert data.metadata["skipped_rows"] == 10
+
+
+def test_lighteval_task_grouped_detects_despite_malformed_first_item():
+    grouped = {
+        "gsm8k|0": [
+            "not-a-mapping",
+            {"doc": {"id": "bare"}, "metric": {"acc": 1.0}},
+            _valid_detail("ok", 0.0),
+        ]
+    }
+    assert LightevalAdapter().detect(grouped)
+    data = LightevalAdapter().parse(grouped)
+    assert [ex.id for ex in data.examples] == ["gsm8k|0:ok"]
+    assert data.metadata["skipped_rows"] == 1
+
+
+def test_detect_routes_late_valid_row_and_task_grouped_to_lighteval():
+    late = [{"x": i} for i in range(10)] + [_valid_detail("late")]
+    grouped = {
+        "gsm8k|0": [
+            {"junk": True},
+            _valid_detail("ok"),
+        ]
+    }
+    assert detect_adapter(late).source_format == "lighteval"
+    assert detect_adapter(grouped).source_format == "lighteval"
+
+
+def test_lighteval_revalidates_fingerprint_on_every_row():
+    # First row establishes detection; a later id+metric-only mapping must not
+    # become a canonical example.
+    raw = [
+        _valid_detail("good"),
+        {
+            "doc": {"id": "incomplete", "task_name": "gsm8k|0"},
+            "metric": {"acc": 1.0},
+        },
+    ]
+    assert LightevalAdapter().detect(raw)
+    data = LightevalAdapter().parse(raw)
+    assert [ex.id for ex in data.examples] == ["gsm8k|0:good"]
+    assert data.metadata["skipped_rows"] == 1
 
 
 # ---------------------------------------------------------------------------
