@@ -37,6 +37,13 @@ A bootstrap confidence interval for the gap is reported alongside all three.
 
 - Continuous scores: **Cohen's *d*** on the paired differences, with a magnitude
   label (negligible `< 0.2`, small `< 0.5`, medium `< 0.8`, large `≥ 0.8`).
+- Ordinal scores: integer rating scales with 3 to 10 observed levels use the
+  matched-pairs **rank-biserial correlation**. Zeros are dropped and tied
+  absolute differences receive midranks. Magnitude labels use the r-family
+  thresholds (negligible `< 0.1`, small `< 0.3`, medium `< 0.5`, large `≥ 0.5`).
+  The finding also reports the **probability of superiority**: the leader's
+  share of paired wins, with ties counting as half. Integer scales with more
+  than 10 observed levels and noninteger scores keep the continuous path.
 - Pass/fail scores: the **risk difference** in percentage points plus **Cohen's
   *h***, the effect size appropriate for proportions (Cohen's *d* assumes roughly
   continuous data and is not used for 0/1 outcomes).
