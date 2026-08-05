@@ -116,6 +116,42 @@ The most valuable fixture is one derived from a genuine export of the tool. If y
 have a real sample file, base the test on it - that is how we make sure the
 adapter matches reality and not an assumption.
 
+## Lighteval (Hugging Face)
+
+Supports JSON representations of Lighteval per-sample details, with tolerance
+for optional fields. Each record has:
+
+- a document (`doc` or `__doc__`): `query`, `choices`, `gold_index`, and usually
+  `id` / `task_name`
+- a metric dict (`metric` or `__metric__`): sample-level metric names to scores
+- a model response (`model_response` or `__model_response__`, optional):
+  generations / logprobs
+
+Both the column names observed in recent official reference Parquet exports
+(`doc` / `metric` / `model_response`) and the underscore-prefixed names in the
+current public Hugging Face documentation (`__doc__` / `__metric__` /
+`__model_response__`) are accepted. Native Parquet files are not read directly;
+convert them to this JSON shape first.
+
+Normalization rules for this adapter:
+
+- Invalid, null, or unparseable metric values are ignored (not raised).
+- Standard-error fields such as `*_stderr` are ignored.
+- Valid metrics preserve input order when fanning out into a suite.
+- Conflicting aliases (for example unequal `doc` and `__doc__`) are treated as
+  malformed and skipped.
+- `skipped_rows` counts skipped input rows, not individual metric fields.
+
+Example IDs are preserved as `task_name:id` when `task_name` is present.
+Multiple metrics fan out into a suite; the single-audit path prefers common
+correctness metrics such as `acc` / `exact_match` / `em`.
+
+**Limitation:** the aggregate `results_{timestamp}.json` file
+(`config_general`, `results`, `config_tasks`, …) contains only task-level
+summaries. EvalTrust detects that shape and raises a clear error rather than
+fabricating per-example rows. Convert details Parquet to the JSON detail shape
+above (or export a details list) before auditing.
+
 ## Single-model tools
 
 If a tool evaluates one model per run, you don't need anything special: parse it

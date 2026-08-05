@@ -1,0 +1,341 @@
+[
+  {
+    "doc": {
+      "choices": [
+        " (A)20%",
+        " (B)30%",
+        " (C)40%",
+        " (D)50%",
+        " (E)60%"
+      ],
+      "fewshot_samples": [],
+      "fewshot_sorting_class": null,
+      "generation_grammar": null,
+      "generation_size": 1,
+      "gold_index": [
+        1
+      ],
+      "id": "44",
+      "images": null,
+      "instruction": null,
+      "num_samples": 1,
+      "original_query": null,
+      "query": "Q: At Daifu university, 24% of all students are members of both a chess club and a swim team. If 20% of members of the swim team are not members of the chess club, what percentage of all Daifu students are members of the swim team? Answer Choices: (A)20% (B)30% (C)40% (D)50% (E)60%\nA: Among A through E, the answer is",
+      "sampling_methods": [
+        "LOGPROBS"
+      ],
+      "specific": null,
+      "stop_sequences": [],
+      "task_name": "agieval:aqua-rat|0",
+      "unconditioned_query": null,
+      "use_logits": true
+    },
+    "metric": {
+      "acc": 0
+    },
+    "model_response": {
+      "argmax_logits_eq_gold": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "input": null,
+      "input_tokens": [
+        1,
+        9690,
+        198,
+        2683,
+        359,
+        253,
+        5356,
+        5646,
+        11173,
+        3365,
+        3511,
+        308,
+        34519,
+        28,
+        7018
+      ],
+      "logits": null,
+      "logprobs": [
+        -14.3203125,
+        -13.65625,
+        -14.46875,
+        -11.703125,
+        -12.0234375
+      ],
+      "output_tokens": [
+        [
+          198,
+          365,
+          49,
+          25,
+          34
+        ],
+        [
+          198,
+          365,
+          50,
+          25,
+          35
+        ],
+        [
+          198,
+          365,
+          51,
+          25,
+          36
+        ],
+        [
+          198,
+          365,
+          52,
+          25,
+          37
+        ],
+        [
+          198,
+          365,
+          53,
+          25,
+          38
+        ]
+      ],
+      "padded_tokens_count": 0,
+      "reasonings": [],
+      "text": [],
+      "text_post_processed": [],
+      "truncated_tokens_count": 0,
+      "unconditioned_logprobs": null
+    }
+  },
+  {
+    "doc": {
+      "choices": [
+        " (A)15",
+        " (B)24",
+        " (C)25",
+        " (D)40",
+        " (E)52"
+      ],
+      "fewshot_samples": [],
+      "fewshot_sorting_class": null,
+      "generation_grammar": null,
+      "generation_size": 1,
+      "gold_index": [
+        3
+      ],
+      "id": "9",
+      "images": null,
+      "instruction": null,
+      "num_samples": 1,
+      "original_query": null,
+      "query": "Q: A sales person gets a 10% commission on each sale he makes. How many sales of $250 each must he make in order to reach a salary of at least $1000? Answer Choices: (A)15 (B)24 (C)25 (D)40 (E)52\nA: Among A through E, the answer is",
+      "sampling_methods": [
+        "LOGPROBS"
+      ],
+      "specific": null,
+      "stop_sequences": [],
+      "task_name": "agieval:aqua-rat|0",
+      "unconditioned_query": null,
+      "use_logits": true
+    },
+    "metric": {
+      "acc": 0
+    },
+    "model_response": {
+      "argmax_logits_eq_gold": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "input": null,
+      "input_tokens": [
+        1,
+        9690,
+        198,
+        2683,
+        359,
+        253,
+        5356,
+        5646,
+        11173,
+        3365,
+        3511,
+        308,
+        34519,
+        28,
+        7018
+      ],
+      "logits": null,
+      "logprobs": [
+        -14.2578125,
+        -13.703125,
+        -13.6328125,
+        -13.1640625,
+        -11.9296875
+      ],
+      "output_tokens": [
+        [
+          198,
+          365,
+          49,
+          25,
+          33
+        ],
+        [
+          198,
+          365,
+          50,
+          25,
+          34
+        ],
+        [
+          198,
+          365,
+          51,
+          25,
+          34
+        ],
+        [
+          198,
+          365,
+          52,
+          25,
+          36
+        ],
+        [
+          198,
+          365,
+          53,
+          25,
+          37
+        ]
+      ],
+      "padded_tokens_count": 0,
+      "reasonings": [],
+      "text": [],
+      "text_post_processed": [],
+      "truncated_tokens_count": 0,
+      "unconditioned_logprobs": null
+    }
+  },
+  {
+    "doc": {
+      "choices": [
+        " (A)520",
+        " (B)720",
+        " (C)920",
+        " (D)None",
+        " (E)Cannot be determined"
+      ],
+      "fewshot_samples": [],
+      "fewshot_sorting_class": null,
+      "generation_grammar": null,
+      "generation_size": 1,
+      "gold_index": [
+        1
+      ],
+      "id": "73",
+      "images": null,
+      "instruction": null,
+      "num_samples": 1,
+      "original_query": null,
+      "query": "Q: Suppose you want to arrange your English, Hindi, Mathematics, History, Geography and Science books on a shelf. In how many ways can you do it ? Answer Choices: (A)520 (B)720 (C)920 (D)None (E)Cannot be determined\nA: Among A through E, the answer is",
+      "sampling_methods": [
+        "LOGPROBS"
+      ],
+      "specific": null,
+      "stop_sequences": [],
+      "task_name": "agieval:aqua-rat|0",
+      "unconditioned_query": null,
+      "use_logits": true
+    },
+    "metric": {
+      "acc": 0
+    },
+    "model_response": {
+      "argmax_logits_eq_gold": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "input": null,
+      "input_tokens": [
+        1,
+        9690,
+        198,
+        2683,
+        359,
+        253,
+        5356,
+        5646,
+        11173,
+        3365,
+        3511,
+        308,
+        34519,
+        28,
+        7018
+      ],
+      "logits": null,
+      "logprobs": [
+        -13.234375,
+        -14.203125,
+        -14.4296875,
+        -15.453125,
+        -11.671875
+      ],
+      "output_tokens": [
+        [
+          198,
+          365,
+          49,
+          25,
+          37
+        ],
+        [
+          198,
+          365,
+          50,
+          25,
+          39
+        ],
+        [
+          198,
+          365,
+          51,
+          25,
+          41
+        ],
+        [
+          198,
+          365,
+          52,
+          25,
+          3482
+        ],
+        [
+          198,
+          365,
+          53,
+          25,
+          40206
+        ]
+      ],
+      "padded_tokens_count": 0,
+      "reasonings": [],
+      "text": [],
+      "text_post_processed": [],
+      "truncated_tokens_count": 0,
+      "unconditioned_logprobs": null
+    }
+  }
+]

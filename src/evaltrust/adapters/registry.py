@@ -16,6 +16,7 @@ from .helm import HelmAdapter
 from .inspect_ai import InspectAdapter
 from .langfuse import LangfuseAdapter
 from .langsmith import LangSmithAdapter
+from .lighteval import LightevalAdapter
 from .mlflow_evaluate import MlflowEvaluateAdapter
 from .openevals import OpenEvalsAdapter
 from .promptfoo import PromptfooAdapter
@@ -46,6 +47,7 @@ REGISTRY: list[Adapter] = [
     RagasAdapter(),
     HelmAdapter(),
     MlflowEvaluateAdapter(),
+    LightevalAdapter(),
     NativeNestedAdapter(),
     GenericRecordsAdapter(),
 ]
@@ -58,7 +60,8 @@ def detect_adapter(raw) -> Adapter:
     raise UnknownFormatError(
         "Could not recognise this evaluation format. EvalTrust looked for "
         "promptfoo results, a DeepEval test-results export, Langfuse scores, "
-        "a HELM per_instance_stats.json, a nested {\"examples\": [...]} "
-        "structure, or a list of records with model/score fields. Provide "
+        "a HELM per_instance_stats.json, a Lighteval per-sample details "
+        "export, a nested {\"examples\": [...]} structure, or a list of "
+        "records with model/score fields. Provide "
         "per-example scores in one of those shapes, or a CSV."
     )
