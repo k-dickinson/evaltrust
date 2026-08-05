@@ -740,3 +740,174 @@ def test_utf8_encoding_cli_audit(tmp_path):
     assert result.exception is None
     # Verify the file was correctly loaded and processed
     assert "A vs B" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Efficiency pillar: CLI end-to-end wiring (issue #165)
+# ---------------------------------------------------------------------------
+# The efficiency pillar is wired automatically when the loaded data contains
+# token_count or latency alongside a quality metric.  Two real-world shapes
+# are tested:
+#
+#  1. Two MLflow-style single-model files passed together
+#     (evaltrust audit runA.json runB.json)
+#     Each file has correctness/score + token_count + latency.
+#
+#  2. A single MLflow eval_results_table file with one quality metric column
+#     and bare token_count / latency columns.
+#     (evaltrust audit mlflow_run.json)
+#     This goes through load_suite → quality_suite path.
+
+
+def _mlflow_single_model(tmp_path, name, quality_scores, token_counts, latency_ms):
+    """Build a minimal MLflow eval_results_table (single model per file)."""
+    columns = ["correctness/score", "token_count", "latency"]
+    data = list(zip(quality_scores, token_counts, latency_ms))
+    raw = {"columns": columns, "data": [list(row) for row in data]}
+    p = tmp_path / name
+    p.write_text(json.dumps(raw))
+    return str(p)
+
+
+def test_cli_two_mlflow_files_shows_efficiency(tmp_path):
+    """Two MLflow single-model files: evaltrust audit runA.json runB.json
+    must show the Efficiency pillar automatically."""
+    n = 60
+    file_a = _mlflow_single_model(
+        tmp_path, "run_a.json",
+        quality_scores=[0.5] * n,
+        token_counts=[100] * n,
+        latency_ms=[200.0] * n,
+    )
+    file_b = _mlflow_single_model(
+        tmp_path, "run_b.json",
+        quality_scores=[0.8] * n,
+        token_counts=[300] * n,
+        latency_ms=[600.0] * n,
+    )
+    result = runner.invoke(app, ["audit", file_a, file_b, "--plain"])
+    assert result.exit_code == 0, result.output
+    assert "Efficiency" in result.stdout
+
+
+def test_cli_two_mlflow_files_token_finding(tmp_path):
+    """Token cost finding must appear in two-file MLflow comparison."""
+    n = 60
+    file_a = _mlflow_single_model(
+        tmp_path, "a.json", [0.5] * n, [100] * n, [200.0] * n)
+    file_b = _mlflow_single_model(
+        tmp_path, "b.json", [0.8] * n, [300] * n, [600.0] * n)
+    result = runner.invoke(app, ["audit", file_a, file_b, "--plain"])
+    assert result.exit_code == 0, result.output
+    assert "Token cost" in result.stdout
+
+
+def test_cli_two_mlflow_files_latency_finding(tmp_path):
+    """Latency finding must appear in two-file MLflow comparison."""
+    n = 60
+    file_a = _mlflow_single_model(
+        tmp_path, "a.json", [0.5] * n, [100] * n, [200.0] * n)
+    file_b = _mlflow_single_model(
+        tmp_path, "b.json", [0.8] * n, [300] * n, [600.0] * n)
+    result = runner.invoke(app, ["audit", file_a, file_b, "--plain"])
+    assert result.exit_code == 0, result.output
+    assert "Latency" in result.stdout
+
+
+def test_cli_two_mlflow_files_efficiency_does_not_change_verdict(tmp_path):
+    """Efficiency findings are advisory (PASS): they must not lower the verdict
+    or cause a non-zero exit with --strict."""
+    n = 80
+    file_a = _mlflow_single_model(
+        tmp_path, "a.json", [0.5] * n, [100] * n, [200.0] * n)
+    file_b = _mlflow_single_model(
+        tmp_path, "b.json", [0.85] * n, [500] * n, [800.0] * n)
+    result = runner.invoke(app, ["audit", file_a, file_b, "--strict", "--plain"])
+    assert "Efficiency" in result.stdout
+    # High-confidence quality win + advisory efficiency = exit 0
+    assert result.exit_code == 0
+
+
+def test_cli_two_mlflow_files_json_includes_efficiency(tmp_path):
+    """--json output must include Efficiency findings for two-file MLflow runs."""
+    n = 60
+    file_a = _mlflow_single_model(
+        tmp_path, "a.json", [0.5] * n, [100] * n, [200.0] * n)
+    file_b = _mlflow_single_model(
+        tmp_path, "b.json", [0.8] * n, [300] * n, [600.0] * n)
+    result = runner.invoke(app, ["audit", file_a, file_b, "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    efficiency = [f for f in data["findings"] if f.get("pillar") == "Efficiency"]
+    assert len(efficiency) >= 1
+
+
+def test_cli_quality_only_two_files_no_efficiency(tmp_path):
+    """Two files with no token_count or latency columns must not show Efficiency."""
+    columns = ["correctness/score"]
+    raw_a = {"columns": columns, "data": [[0.5]] * 60}
+    raw_b = {"columns": columns, "data": [[0.8]] * 60}
+    fa = tmp_path / "a.json"; fa.write_text(json.dumps(raw_a))
+    fb = tmp_path / "b.json"; fb.write_text(json.dumps(raw_b))
+    result = runner.invoke(app, ["audit", str(fa), str(fb), "--plain"])
+    assert result.exit_code == 0, result.output
+    assert "Efficiency" not in result.stdout
+
+
+def test_cli_single_mlflow_file_with_efficiency(tmp_path):
+    """Single MLflow file (two quality cols + token_count + latency, two models).
+    Goes through the load_suite → quality_suite extraction path."""
+    # Use the generic format so the adapter produces a suite with multiple
+    # metrics keyed by name.  The generic adapter emits a 'metric' per score
+    # column when examples carry per-metric scores.
+    # Simplest correct shape: standard two-model file where the suite has one
+    # quality metric plus token_count and latency stored as separate examples.
+    # We use the MLflow split-table shape for a single model and check the
+    # single-file suite path works with the extracted side-channels.
+    n = 60
+    # Single-model MLflow file with quality + efficiency columns.
+    columns = ["correctness/score", "token_count", "latency"]
+    data = [[0.7, 120, 250.0]] * n
+    raw = {"columns": columns, "data": data}
+    p = tmp_path / "mlflow.json"
+    p.write_text(json.dumps(raw))
+    # Single-model file: goes through the suite path; only one model so the
+    # audit will produce a single-model threshold report (no comparison).
+    # We just check it doesn't crash and exits cleanly.
+    result = runner.invoke(app, ["audit", str(p), "--plain"])
+    assert result.exit_code == 0, result.output
+
+
+def test_cli_efficiency_quality_findings_unchanged(tmp_path):
+    """Adding token_count to a two-file comparison must not alter any quality
+    finding's status compared to files without token_count."""
+    n = 60
+    # Without efficiency columns
+    cols_q = ["correctness/score"]
+    raw_qa = {"columns": cols_q, "data": [[0.5]] * n}
+    raw_qb = {"columns": cols_q, "data": [[0.8]] * n}
+    qa = tmp_path / "qa.json"; qa.write_text(json.dumps(raw_qa))
+    qb = tmp_path / "qb.json"; qb.write_text(json.dumps(raw_qb))
+
+    # With efficiency columns
+    file_a = _mlflow_single_model(
+        tmp_path, "ea.json", [0.5] * n, [100] * n, [200.0] * n)
+    file_b = _mlflow_single_model(
+        tmp_path, "eb.json", [0.8] * n, [300] * n, [600.0] * n)
+
+    r1 = runner.invoke(app, ["audit", str(qa), str(qb), "--json"])
+    r2 = runner.invoke(app, ["audit", file_a, file_b, "--json"])
+    assert r1.exit_code == 0, r1.output
+    assert r2.exit_code == 0, r2.output
+
+    d1 = json.loads(r1.stdout)
+    d2 = json.loads(r2.stdout)
+    # Compare statuses by pillar — titles include model names so they'll differ
+    # between runs, but statuses must be identical.
+    statuses_1 = sorted(f["status"] for f in d1["findings"]
+                        if f.get("pillar") != "Efficiency")
+    statuses_2 = sorted(f["status"] for f in d2["findings"]
+                        if f.get("pillar") != "Efficiency")
+    assert statuses_1 == statuses_2, (
+        "Adding efficiency columns must not change quality finding statuses"
+    )

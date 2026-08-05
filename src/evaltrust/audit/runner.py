@@ -10,6 +10,7 @@ from ..config import AuditConfig
 from ..core.schema import EvalData, Finding, Status
 from ..versions import METHODOLOGY_VERSION, SCHEMA_VERSION
 from .allpairs import audit_all_pairs
+from .efficiency import audit_efficiency
 from .bayesian import audit_bayesian_win_probability
 from .predictive_rerun import audit_predictive_rerun
 from .win_rate import audit_win_rate
@@ -144,6 +145,9 @@ def run_audit(
     threshold: float | None = None,
     config: "AuditConfig | None" = None,
     slice_by: str | None = None,
+    token_count_data: "EvalData | None" = None,
+    latency_data: "EvalData | None" = None,
+    latency_unit: str = "ms",
     *,
     significant: bool | None = None,
 ) -> AuditReport:
@@ -156,7 +160,10 @@ def run_audit(
     # threshold or a lone model -> single.
     if model_a is not None and model_b is not None:
         return _comparison(data, model_a, model_b, cfg, significant=significant,
-                           slice_by=slice_by)
+                           slice_by=slice_by,
+                           token_count_data=token_count_data,
+                           latency_data=latency_data,
+                           latency_unit=latency_unit)
     if threshold is not None:
         if data.has_preferences and not any(ex.scores for ex in data.examples):
             raise ValueError(
@@ -171,7 +178,10 @@ def run_audit(
         return _single(data, model_a or data.models[0], None, cfg)
     model_a, model_b = _pick_models(data)
     return _comparison(data, model_a, model_b, cfg, significant=significant,
-                       slice_by=slice_by)
+                       slice_by=slice_by,
+                       token_count_data=token_count_data,
+                       latency_data=latency_data,
+                       latency_unit=latency_unit)
 
 
 def _strongest(data: EvalData) -> str:
@@ -181,7 +191,8 @@ def _strongest(data: EvalData) -> str:
 
 
 def _comparison(data, model_a, model_b, cfg, significant=None,
-                slice_by=None) -> AuditReport:
+                slice_by=None, token_count_data=None,
+                latency_data=None, latency_unit="ms") -> AuditReport:
     differences = data.differences(model_a, model_b)
     has_pair_scores = any(
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
@@ -308,6 +319,14 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
                 ),
                 "preference_only" if preference_only else "no_paired_scores",
             ))
+
+    if token_count_data is not None or latency_data is not None:
+        findings += audit_efficiency(
+            data, model_a, model_b,
+            token_count_data=token_count_data,
+            latency_data=latency_data,
+            latency_unit=latency_unit,
+        )
 
     return AuditReport(
         model_a=model_a, model_b=model_b, n_examples=data.n_examples,
