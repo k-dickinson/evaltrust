@@ -83,6 +83,17 @@ nearly the same score to everything and cannot separate any two models.
 - **PASS** when scores show a healthy spread.
 - **WARN** when there is almost no variation.
 
+### Score-scale sanity
+
+EvalTrust warns when positive metric maxima differ by at least `20x`, or when
+at least 80% of one metric is strictly between 0 and 1 or between 1.5 and 100,
+with values from the other range also present. Mixed scales can make saturation
+checks and score comparisons misleading.
+
+- **PASS** when the observed ranges look consistent.
+- **WARN** when scores span an unexpected range.
+- **SKIP** when there is only one score and no sibling metric to compare.
+
 ## Repeatability
 
 *Requires repeated-run data (`runs`). If absent, the pillar returns a single SKIP
