@@ -176,6 +176,22 @@ def _run_metrics(suite, model_a, model_b, cfg_for,
     optionally passes a pre-decided significance (used by Holm); the default
     ``None`` lets each metric's audit decide with its own ``p < alpha``.
     """
+    observed_ranges: "OrderedDict[str, dict[str, float | int]]" = OrderedDict()
+    for metric, data in suite.items():
+        scores = np.array([
+            ex.scores[model]
+            for ex in data.examples
+            for model in (model_a, model_b)
+            if model in ex.scores
+        ], dtype=float)
+        scores = scores[np.isfinite(scores)]
+        if scores.size:
+            observed_ranges[metric] = {
+                "min": float(scores.min()),
+                "max": float(scores.max()),
+                "n": int(scores.size),
+            }
+
     reports: "OrderedDict[str, AuditReport]" = OrderedDict()
     for metric, data in suite.items():
         metric_cfg = cfg_for(metric)
@@ -185,7 +201,7 @@ def _run_metrics(suite, model_a, model_b, cfg_for,
             metric_cfg = replace(metric_cfg, all_pairs=False)
         reports[metric] = run_audit(
             data, model_a=model_a, model_b=model_b, config=metric_cfg,
-            significant=significant_for(metric))
+            significant=significant_for(metric), observed_ranges=observed_ranges)
     return reports
 
 
