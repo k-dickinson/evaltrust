@@ -163,7 +163,8 @@ def run_audit(
                            slice_by=slice_by,
                            token_count_data=token_count_data,
                            latency_data=latency_data,
-                           latency_unit=latency_unit)
+                           latency_unit=latency_unit,
+)
     if threshold is not None:
         if data.has_preferences and not any(ex.scores for ex in data.examples):
             raise ValueError(
@@ -181,7 +182,8 @@ def run_audit(
                        slice_by=slice_by,
                        token_count_data=token_count_data,
                        latency_data=latency_data,
-                       latency_unit=latency_unit)
+                       latency_unit=latency_unit,
+)
 
 
 def _strongest(data: EvalData) -> str:
@@ -192,7 +194,8 @@ def _strongest(data: EvalData) -> str:
 
 def _comparison(data, model_a, model_b, cfg, significant=None,
                 slice_by=None, token_count_data=None,
-                latency_data=None, latency_unit="ms") -> AuditReport:
+                latency_data=None, latency_unit="ms",
+) -> AuditReport:
     differences = data.differences(model_a, model_b)
     has_pair_scores = any(
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
