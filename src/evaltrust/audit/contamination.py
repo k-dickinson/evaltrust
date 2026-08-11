@@ -24,14 +24,18 @@ def _find_exact_matches(benchmark: list[str], reference: list[str]) -> set[int]:
 
     """Find exact matches between benchmark and reference sets."""
 
+    # Exclude entries that are empty after normalisation so an empty reference
+    # string can't match an empty benchmark item (and vice versa).
     normalized_reference = {
-        _normalize_text(text)
-        for text in reference
+        normalized
+        for normalized in (_normalize_text(text) for text in reference)
+        if normalized
     }
     matches = set()
 
     for i, text in enumerate(benchmark):
-        if _normalize_text(text) in normalized_reference:
+        normalized = _normalize_text(text)
+        if normalized and normalized in normalized_reference:
             matches.add(i)
     return matches
 
@@ -46,15 +50,18 @@ def _find_near_matches(benchmark: list[str], reference: list[str], exact_matches
             continue
         normalized = _normalize_text(text)
         normalized_len = len(normalized)
-        
+        if normalized_len == 0:
+            continue  # empty after normalisation; skip rather than false-flag
+
         for ref_text in normalized_ref_list:
             ref_len = len(ref_text)
-            
-            if (normalized_len + ref_len) > 0:
-                max_possible_ratio = 2.0 * min(normalized_len, ref_len) / (normalized_len + ref_len)
-                if max_possible_ratio < threshold:
-                    continue
-                    
+            if ref_len == 0:
+                continue  # empty reference entry; skip to avoid ratio=1.0 false match
+
+            max_possible_ratio = 2.0 * min(normalized_len, ref_len) / (normalized_len + ref_len)
+            if max_possible_ratio < threshold:
+                continue
+
             similarity = difflib.SequenceMatcher(None, normalized, ref_text).ratio()
             if similarity >= threshold:
                 near_matches.add(i)

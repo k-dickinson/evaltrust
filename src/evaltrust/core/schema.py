@@ -8,11 +8,14 @@ OpenEvals, or a plain CSV alike.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from enum import Enum
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class Status(Enum):
@@ -136,6 +139,12 @@ class EvalData:
             r = min(len(a_runs), len(b_runs))
             if r == 0:
                 continue
+            if len(a_runs) != len(b_runs):
+                logger.warning(
+                    "Example %r: %s has %d runs but %s has %d; "
+                    "truncating to %d paired differences.",
+                    ex.id, model_a, len(a_runs), model_b, len(b_runs), r,
+                )
             a = np.array(a_runs[:r], dtype=float)
             b = np.array(b_runs[:r], dtype=float)
             out.append(b - a)

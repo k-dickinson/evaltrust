@@ -36,7 +36,8 @@ dependencies = [
 [project.optional-dependencies]
 # statsmodels is used only in the test suite, to validate EvalTrust's statistics
 # against an independent reference implementation. It is not a runtime dependency.
-dev = ["pytest>=8.0", "statsmodels>=0.14", "cffconvert>=2.0"]
+# ijson is included so the large-JSON streaming path is exercised by the tests.
+dev = ["pytest>=8.0", "statsmodels>=0.14", "cffconvert>=2.0", "ijson>=3.1"]
 # cyclonedx-bom pulls a large transitive tree, so it lives in its own extra
 # (not `dev`) to keep the dev install resolvable. Used only to generate an SBOM.
 sbom = ["cyclonedx-bom>=4.0"]
