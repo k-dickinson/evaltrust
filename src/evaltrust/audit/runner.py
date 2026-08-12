@@ -148,9 +148,9 @@ def run_audit(
     token_count_data: "EvalData | None" = None,
     latency_data: "EvalData | None" = None,
     latency_unit: str = "ms",
+    observed_ranges: "dict[str, dict[str, float | int]] | None" = None,
     *,
     significant: bool | None = None,
-    observed_ranges: dict[str, dict[str, float | int]] | None = None,
 ) -> AuditReport:
     # When no config is given, build one from the loose kwargs.
     cfg = config or AuditConfig(alpha=alpha, equivalence_margin=equivalence_margin,
@@ -165,7 +165,7 @@ def run_audit(
                            token_count_data=token_count_data,
                            latency_data=latency_data,
                            latency_unit=latency_unit,
-)
+                           observed_ranges=observed_ranges)
     if threshold is not None:
         if data.has_preferences and not any(ex.scores for ex in data.examples):
             raise ValueError(
@@ -196,7 +196,7 @@ def _strongest(data: EvalData) -> str:
 def _comparison(data, model_a, model_b, cfg, significant=None,
                 slice_by=None, token_count_data=None,
                 latency_data=None, latency_unit="ms",
-) -> AuditReport:
+                observed_ranges=None) -> AuditReport:
     differences = data.differences(model_a, model_b)
     has_pair_scores = any(
         model_a in ex.scores or model_b in ex.scores for ex in data.examples)
