@@ -150,6 +150,7 @@ def run_audit(
     latency_unit: str = "ms",
     *,
     significant: bool | None = None,
+    observed_ranges: dict[str, dict[str, float | int]] | None = None,
 ) -> AuditReport:
     # When no config is given, build one from the loose kwargs.
     cfg = config or AuditConfig(alpha=alpha, equivalence_margin=equivalence_margin,
@@ -255,7 +256,7 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
         findings += audit_benchmark_health(
             data, [model_a, model_b],
             saturation_fraction=cfg.saturation_fraction, min_spread=cfg.min_spread,
-            score_ceiling=cfg.score_ceiling)
+            score_ceiling=cfg.score_ceiling, observed_ranges=observed_ranges)
     else:
         findings.append(_score_skip(
             "Benchmark Health",

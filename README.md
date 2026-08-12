@@ -338,6 +338,7 @@ produced and auto-detects the shape. First-class adapters today:
 - **Ragas** result export (one RAG pipeline per run - pass two files to compare)
 - **OpenAI Evals** (`openai/evals`) `.jsonl` log (one model per run - pass two files to compare)
 - **HELM** per-instance results (`per_instance_stats.json`) (one model per run - pass two files to compare)
+- **Lighteval** (Hugging Face) JSON per-sample details export (convert Parquet first; one model per run - pass two files to compare)
 - **MLflow evaluate** `eval_results_table` export (one model per run - pass two files to compare)
 - **lm-eval** (`lm-evaluation-harness`) sample logs (`.jsonl`)
 - **Nested JSON** - `{"models": [...], "examples": [{"id", "scores": {...}}]}`

@@ -12,7 +12,7 @@ import pytest
 from evaltrust.audit.suite import audit_suite
 from evaltrust.audit.verdict import VerdictLevel
 from evaltrust.config import AuditConfig
-from evaltrust.core.schema import EvalData, Example
+from evaltrust.core.schema import EvalData, Example, Status
 
 
 def metric_data(a_scores, b_scores):
@@ -66,6 +66,53 @@ def test_overall_level_is_the_worst_metric():
     }
     report = audit_suite(suite, seed=0)
     assert report.overall_level is VerdictLevel.LOW
+
+
+def _scaled_continuous_metric(scale):
+    a_pattern = [0.1, 0.2, 0.3, 0.4]
+    b_pattern = [0.6, 0.7, 0.8, 0.9]
+    return metric_data(
+        [a_pattern[i % len(a_pattern)] * scale for i in range(200)],
+        [b_pattern[i % len(b_pattern)] * scale for i in range(200)],
+    )
+
+
+def test_mixed_metric_score_scales_warn_and_lower_verdict_to_moderate():
+    report = audit_suite({
+        "unit": _scaled_continuous_metric(1.0),
+        "percent": _scaled_continuous_metric(100.0),
+    }, seed=0)
+
+    for metric_report in report.reports.values():
+        (finding,) = [
+            f for f in metric_report.findings
+            if f.details.get("check") == "scale_sanity"
+        ]
+        assert finding.status is Status.WARN
+        assert finding.details["trigger_reason"] == "metric_maxima_ratio"
+        assert finding.details["observed_ranges"] == {
+            "unit": {"min": 0.1, "max": 0.9, "n": 400},
+            "percent": {"min": 10.0, "max": 90.0, "n": 400},
+        }
+        assert metric_report.verdict.level is VerdictLevel.MODERATE
+    assert report.overall_level is VerdictLevel.MODERATE
+
+
+def test_clean_metric_scales_keep_the_exact_high_confidence_verdict():
+    report = audit_suite({
+        "quality": _scaled_continuous_metric(1.0),
+        "safety": _scaled_continuous_metric(1.0),
+    }, seed=0)
+
+    expected = {
+        "level": "HIGH",
+        "label": "High Confidence",
+        "summary": "The result holds up. You can act on it.",
+        "drivers": [],
+    }
+    assert report.overall_level is VerdictLevel.HIGH
+    for metric_report in report.reports.values():
+        assert metric_report.verdict.to_dict() == expected
 
 
 def test_to_dict_is_json_serializable():

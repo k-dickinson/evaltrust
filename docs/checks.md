@@ -37,6 +37,13 @@ A bootstrap confidence interval for the gap is reported alongside all three.
 
 - Continuous scores: **Cohen's *d*** on the paired differences, with a magnitude
   label (negligible `< 0.2`, small `< 0.5`, medium `< 0.8`, large `≥ 0.8`).
+- Ordinal scores: integer rating scales with 3 to 10 observed levels use the
+  matched-pairs **rank-biserial correlation**. Zeros are dropped and tied
+  absolute differences receive midranks. Magnitude labels use the r-family
+  thresholds (negligible `< 0.1`, small `< 0.3`, medium `< 0.5`, large `≥ 0.5`).
+  The finding also reports the **probability of superiority**: the leader's
+  share of paired wins, with ties counting as half. Integer scales with more
+  than 10 observed levels and noninteger scores keep the continuous path.
 - Pass/fail scores: the **risk difference** in percentage points plus **Cohen's
   *h***, the effect size appropriate for proportions (Cohen's *d* assumes roughly
   continuous data and is not used for 0/1 outcomes).
@@ -75,6 +82,17 @@ nearly the same score to everything and cannot separate any two models.
 
 - **PASS** when scores show a healthy spread.
 - **WARN** when there is almost no variation.
+
+### Score-scale sanity
+
+EvalTrust warns when positive metric maxima differ by at least `20x`, or when
+at least 80% of one metric is strictly between 0 and 1 or between 1.5 and 100,
+with values from the other range also present. Mixed scales can make saturation
+checks and score comparisons misleading.
+
+- **PASS** when the observed ranges look consistent.
+- **WARN** when scores span an unexpected range.
+- **SKIP** when there is only one score and no sibling metric to compare.
 
 ## Repeatability
 

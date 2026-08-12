@@ -6,6 +6,7 @@ adapter only has to say where the rows are and what the columns are called.
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -40,6 +41,14 @@ _FALSE = {
     "loss", "reject", "negative", "bad", "lost",
 }
 
+_DECIMAL = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+_SLASH_FRACTION = re.compile(
+    rf"^(?P<numerator>{_DECIMAL})\s*/\s*(?P<denominator>{_DECIMAL})$"
+)
+_OUT_OF_FRACTION = re.compile(
+    rf"^(?P<numerator>{_DECIMAL})\s+out\s+of\s+(?P<denominator>{_DECIMAL})$"
+)
+
 
 @dataclass(frozen=True)
 class Record:
@@ -70,8 +79,9 @@ class PreferenceRecord:
 def coerce_score(raw) -> float:
     """Turn the many spellings of a score into a float.
 
-    Accepts numbers, booleans, numeric strings, and pass/fail-style words. Raises
-    on anything it can't confidently interpret, rather than guessing.
+    Accepts numbers, booleans, numeric strings, decimal fractions such as
+    ``3/5`` or ``4 out of 5``, and pass/fail-style words. Raises on anything it
+    can't confidently interpret, rather than guessing.
     """
     if isinstance(raw, bool):
         return 1.0 if raw else 0.0
@@ -84,6 +94,13 @@ def coerce_score(raw) -> float:
                 return float(s[:-1].strip()) / 100
             except ValueError:
                 pass
+        fraction = _SLASH_FRACTION.fullmatch(s) or _OUT_OF_FRACTION.fullmatch(s)
+        if fraction is not None:
+            numerator = float(fraction.group("numerator"))
+            denominator = float(fraction.group("denominator"))
+            if numerator < 0 or denominator <= 0:
+                raise ValueError(f"Cannot interpret {raw!r} as a score")
+            return numerator / denominator
         try:
             return float(s)
         except ValueError:
