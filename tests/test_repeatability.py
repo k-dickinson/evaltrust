@@ -74,6 +74,23 @@ def test_exact_tie_every_run_does_not_name_a_false_winner():
     assert "tie" in text or "indistinguishable" in text
 
 
+def test_near_zero_mean_gap_from_cancellation_is_treated_as_a_tie():
+    # Per-run gaps [0.1, 0.2, -0.3] sum to a floating-point residue (~1.85e-17),
+    # not exactly 0.0. A single example keeps the residue (averaging across many
+    # would cancel it). The models are tied and no winner must be named.
+    findings = audit_repeatability(
+        make_data([0.0, 0.0, 0.0], [0.1, 0.2, -0.3], n=1), "A", "B"
+    )
+    stab = by_check(findings, "rerun_stability")
+    assert stab.details["mean_gap"] != 0.0          # confirms the cancellation path
+    assert abs(stab.details["mean_gap"]) < 1e-12
+    assert "the winner was" not in stab.how_detected  # no model named as winner
+    assert "neither model led" in stab.how_detected
+    assert "wins consistently" not in (
+        stab.title + stab.how_detected + stab.how_to_fix
+    ).lower()
+
+
 def test_tie_with_alternating_direction_is_not_pass_and_names_no_winner():
     # Gap is +0.5, -0.5 across two runs: mean is exactly 0 but the direction
     # flips, so this is noise, not a stable tie.
