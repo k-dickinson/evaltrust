@@ -12,6 +12,7 @@ process, so an audit can gate CI the way tests do.
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from dataclasses import replace
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
@@ -327,18 +328,87 @@ def audit(
     suite_report = None
     report = None
     try:
+        _EFFICIENCY_KEYS = {"token_count", "latency"}
+
         if len(results) == 2:
             data = load_comparison(results, label_a=model_a, label_b=model_b)
             # Two input files already define one pair. Keep all-pairs scoped to
             # a single file that declares the model family.
+            # Also try to extract token_count and latency from each file's suite
+            # so they can be passed as efficiency side-channels.
+            token_count_data = None
+            latency_data = None
+            try:
+                suite_a = load_suite(results[0])
+                suite_b = load_suite(results[1])
+                # Merge token_count from both files if present in both.
+                if "token_count" in suite_a and "token_count" in suite_b:
+                    from .core.pairing import primary_model
+                    la = primary_model(suite_a["token_count"])
+                    lb = primary_model(suite_b["token_count"])
+                    lbl_a = (model_a or data.models[0])
+                    lbl_b = (model_b or data.models[1])
+                    from .core.pairing import merge_two as _merge
+                    token_count_data = _merge(
+                        suite_a["token_count"], suite_b["token_count"],
+                        lbl_a, lbl_b)
+                if "latency" in suite_a and "latency" in suite_b:
+                    lbl_a = (model_a or data.models[0])
+                    lbl_b = (model_b or data.models[1])
+                    from .core.pairing import merge_two as _merge
+                    latency_data = _merge(
+                        suite_a["latency"], suite_b["latency"],
+                        lbl_a, lbl_b)
+            except Exception:
+                # Efficiency extraction is best-effort: if anything goes wrong
+                # (format doesn't support suites, pairing fails, etc.), just
+                # proceed without efficiency findings.
+                token_count_data = None
+                latency_data = None
+
             report = run_audit(
                 data, config=replace(cfg, all_pairs=False),
-                slice_by=slice_by)
+                slice_by=slice_by,
+                token_count_data=token_count_data,
+                latency_data=latency_data)
         else:
             suite = load_suite(results[0])
             if len(suite) > 1:
-                suite_report = audit_suite(
-                    suite, model_a=model_a, model_b=model_b, config=cfg)
+                # Extract operational columns (token_count, latency) before
+                # deciding whether this is a multi-metric suite or a single
+                # quality metric with cost/latency side-channels.
+                # The MLflow adapter (and any future adapter that follows the
+                # same convention) puts these in the suite keyed by their bare
+                # names.  We pull them out here so run_audit receives them as
+                # first-class efficiency datasets rather than treating them as
+                # quality metrics.
+                token_count_data = suite.get("token_count")
+                latency_data = suite.get("latency")
+                # Quality suite: everything except the operational columns.
+                quality_suite = OrderedDict(
+                    (k, v) for k, v in suite.items() if k not in _EFFICIENCY_KEYS
+                )
+                if len(quality_suite) > 1:
+                    # Genuine multi-metric suite: audit as a suite.
+                    # Efficiency data is advisory; the suite path doesn't yet
+                    # thread it through, so we skip it silently here and let
+                    # the suite report stand on its own.
+                    suite_report = audit_suite(
+                        quality_suite, model_a=model_a, model_b=model_b, config=cfg)
+                elif len(quality_suite) == 1:
+                    # Single quality metric + optional cost/latency side-channels.
+                    data = next(iter(quality_suite.values()))
+                    report = run_audit(data, model_a=model_a, model_b=model_b,
+                                       threshold=threshold, config=cfg,
+                                       slice_by=slice_by,
+                                       token_count_data=token_count_data,
+                                       latency_data=latency_data)
+                else:
+                    # Suite was only operational columns (no quality metric).
+                    # Fall back to the original suite path so the user gets a
+                    # useful error rather than a silent empty report.
+                    suite_report = audit_suite(
+                        suite, model_a=model_a, model_b=model_b, config=cfg)
             else:
                 data = next(iter(suite.values()))
                 report = run_audit(data, model_a=model_a, model_b=model_b,
