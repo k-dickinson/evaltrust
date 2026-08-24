@@ -19,19 +19,22 @@ Full single-pass O(1)-in-row-count streaming requires refactoring
 ``detect_line_adapter`` / ``dicts_to_records`` to accept a one-row lookahead
 iterator; that is tracked in a TODO comment inside ``_records_from_jsonl_iter``.
 
-**JSON** streaming is a best-effort enhancement only.  For the two common shapes
-— a top-level array or ``{"examples": [...]}`` — the optional ``ijson`` library
-is used when available, keeping peak memory proportional to the largest single
-record.  When ``ijson`` is absent the file falls back to a full ``read_text()``
-load and a warning is emitted.  The memory guarantee (peak bounded by buffer,
-not file size) therefore applies to JSONL and CSV unconditionally, and to JSON
-only when ``ijson`` is installed (``pip install 'evaltrust[streaming]'``).
+**JSON** streaming is a best-effort enhancement only.  A top-level array or any
+top-level object (``{"examples": [...]}`` and generic wrapper keys alike) is
+parsed with the optional ``ijson`` library when available, in a single pass that
+never materialises the raw file string — so peak memory is the parsed object
+(bounded by the record list), not the file string plus the object.  When
+``ijson`` is absent the file falls back to a full ``read_text()`` load and a
+warning is emitted.  The memory win therefore applies to JSONL and CSV
+unconditionally, and to JSON only when ``ijson`` is installed
+(``pip install 'evaltrust[streaming]'``).
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import itertools
 import json
 import logging
 from collections import OrderedDict
@@ -42,7 +45,9 @@ from .pairing import merge_two, primary_model
 from .schema import EvalData, RunLevelData
 from ..adapters.common import (
     DEFAULT_METRIC,
+    MODEL_KEYS,
     Record,
+    SCORE_KEYS,
     records_to_evaldata,
     records_to_suite,
 )
@@ -54,6 +59,12 @@ logger = logging.getLogger(__name__)
 
 # Files larger than this are streamed rather than fully materialised.
 _STREAM_THRESHOLD = 64 * 1024 * 1024  # 64 MiB
+
+# Bounded lookahead for line-format adapter detection on large JSONL files.
+# It must cover the largest window any registered line adapter needs to detect
+# itself: OpenAI Evals logs may carry the ``spec`` row after leading event rows,
+# while lm-eval only inspects row 0.
+_LINE_ADAPTER_PEEK = 50
 
 # ---------------------------------------------------------------------------
 # Internal helpers – streaming generators
@@ -284,21 +295,42 @@ def _normalize_ijson_value(v):
     return v
 
 
+def _normalize_ijson_any(v):
+    """Deep-normalise any ijson-parsed value so every ``Decimal`` becomes a
+    ``float``, at any nesting depth (dicts, lists, lists-of-lists, ...)."""
+    if isinstance(v, dict):
+        return {k: _normalize_ijson_any(val) for k, val in v.items()}
+    if isinstance(v, list):
+        return [_normalize_ijson_any(i) for i in v]
+    return _normalize_ijson_value(v)
+
+
 def _normalize_ijson_dict(d: dict) -> dict:
     """Recursively convert Decimal values in an ijson-parsed dict to float."""
-    out = {}
-    for k, v in d.items():
-        if isinstance(v, dict):
-            out[k] = _normalize_ijson_dict(v)
-        elif isinstance(v, list):
-            out[k] = [
-                _normalize_ijson_dict(i) if isinstance(i, dict)
-                else _normalize_ijson_value(i)
-                for i in v
-            ]
-        else:
-            out[k] = _normalize_ijson_value(v)
-    return out
+    return _normalize_ijson_any(d)
+
+
+def _ijson_load_object(ijson, path: Path, parse_errors) -> dict | None:
+    """Reconstruct a top-level JSON object from a file using a single ijson pass.
+
+    ``ijson.kvitems`` yields each top-level ``(key, value)`` once, so the record
+    array is built exactly once — no separate metadata pass that would re-parse
+    it. Peak memory is the parsed object (bounded by the record list, per the
+    module's streaming contract), never the raw file string. Any wrapper key is
+    supported because detection is delegated to :func:`detect_adapter`, matching
+    the non-streaming path exactly.
+
+    Returns the normalised object, or ``None`` on a parse error (so the caller
+    falls back to a full load and surfaces the clean ``json`` error message).
+    """
+    raw_obj: dict = {}
+    try:
+        with path.open("rb") as fh:
+            for key, value in ijson.kvitems(fh, ""):
+                raw_obj[key] = _normalize_ijson_any(value)
+    except parse_errors:
+        return None
+    return raw_obj or None
 
 
 def _peek_first_byte(path: Path) -> bytes:
@@ -326,8 +358,9 @@ def _load_json_streamed(path: Path) -> EvalData | None:
 
     Supported shapes
     ----------------
-    * Top-level array  ``[{...}, ...]``  → generic record-list adapter
-    * ``{"examples": [{...}, ...]}``     → native nested adapter
+    * Top-level array  ``[{...}, ...]``            → generic record-list adapter
+    * Top-level object ``{<wrapper>: [{...}], ...}`` → any adapter detect_adapter
+      recognises (native ``examples`` and generic wrapper keys alike)
     """
     ijson = _ijson_import()
     if ijson is None:
@@ -345,44 +378,25 @@ def _load_json_streamed(path: Path) -> EvalData | None:
 
     if first_byte == b"[":
         rows: list[dict] = []
-        with path.open("rb") as fh:
-            for item in ijson.items(fh, "item"):
-                if not isinstance(item, dict):
-                    raise ValueError(
-                        f"Expected a JSON array of objects in '{path.name}', "
-                        f"got a {type(item).__name__} element."
-                    )
-                rows.append(_normalize_ijson_dict(item))
+        try:
+            with path.open("rb") as fh:
+                for item in ijson.items(fh, "item"):
+                    if not isinstance(item, dict):
+                        raise ValueError(
+                            f"Expected a JSON array of objects in '{path.name}', "
+                            f"got a {type(item).__name__} element."
+                        )
+                    rows.append(_normalize_ijson_dict(item))
+        except parse_errors:
+            return None  # malformed/truncated: fall back for a clean json error
         if not rows:
             raise UnknownFormatError("The JSON file has no data rows.")
         return detect_adapter(rows).parse(rows)
 
     if first_byte == b"{":
-        # Collect ALL top-level keys in one pass, then stream the examples array
-        # in a second pass.  Stopping at the first "examples" key would silently
-        # drop any top-level fields that appear after it in the file.
-        top: dict = {}
-        try:
-            with path.open("rb") as fh:
-                for key, value in ijson.kvitems(fh, ""):
-                    if key != "examples":
-                        top[key] = _normalize_ijson_value(value)
-        except parse_errors:
+        raw_obj = _ijson_load_object(ijson, path, parse_errors)
+        if raw_obj is None:
             return None
-
-        rows = []
-        try:
-            with path.open("rb") as fh:
-                for item in ijson.items(fh, "examples.item"):
-                    rows.append(_normalize_ijson_dict(item))
-        except parse_errors:
-            return None
-
-        if not rows:
-            return None
-
-        raw_obj = dict(top)
-        raw_obj["examples"] = rows
         return detect_adapter(raw_obj).parse(raw_obj)
 
     return None
@@ -413,14 +427,17 @@ def _suite_from_json_streamed(path: Path) -> "OrderedDict[str, EvalData] | None"
 
     if first_byte == b"[":
         rows: list[dict] = []
-        with path.open("rb") as fh:
-            for item in ijson.items(fh, "item"):
-                if not isinstance(item, dict):
-                    raise ValueError(
-                        f"Expected a JSON array of objects in '{path.name}', "
-                        f"got a {type(item).__name__} element."
-                    )
-                rows.append(_normalize_ijson_dict(item))
+        try:
+            with path.open("rb") as fh:
+                for item in ijson.items(fh, "item"):
+                    if not isinstance(item, dict):
+                        raise ValueError(
+                            f"Expected a JSON array of objects in '{path.name}', "
+                            f"got a {type(item).__name__} element."
+                        )
+                    rows.append(_normalize_ijson_dict(item))
+        except parse_errors:
+            return None  # malformed/truncated: fall back for a clean json error
         if not rows:
             raise UnknownFormatError("The JSON file has no data rows.")
         skipped: list = []
@@ -428,30 +445,18 @@ def _suite_from_json_streamed(path: Path) -> "OrderedDict[str, EvalData] | None"
         return records_to_suite(records, "generic", {"skipped_rows": len(skipped)})
 
     if first_byte == b"{":
-        # Collect ALL top-level keys first, then stream examples separately.
-        top: dict = {}
-        try:
-            with path.open("rb") as fh:
-                for key, value in ijson.kvitems(fh, ""):
-                    if key != "examples":
-                        top[key] = _normalize_ijson_value(value)
-        except parse_errors:
+        raw_obj = _ijson_load_object(ijson, path, parse_errors)
+        if raw_obj is None:
             return None
-
-        rows = []
-        try:
-            with path.open("rb") as fh:
-                for item in ijson.items(fh, "examples.item"):
-                    rows.append(_normalize_ijson_dict(item))
-        except parse_errors:
-            return None
-
-        if not rows:
-            return None
-
-        raw_obj = dict(top)
-        raw_obj["examples"] = rows
         adapter = detect_adapter(raw_obj)
+        # Mirror the non-streaming _suite_from_json: the generic record list must
+        # be split by metric via records_to_suite, not collapsed by parse().
+        if adapter.source_format == "generic":
+            skipped: list = []
+            records = dicts_to_records(_find_record_list(raw_obj), skipped)
+            return records_to_suite(
+                records, "generic", {"skipped_rows": len(skipped)}
+            )
         if hasattr(adapter, "parse_suite"):
             return adapter.parse_suite(raw_obj)
         return OrderedDict([(DEFAULT_METRIC, adapter.parse(raw_obj))])
@@ -712,14 +717,14 @@ def _stream_records_from_jsonl(
 ) -> tuple[list[Record], str, dict] | None:
     """Attempt to extract records from a large JSONL file with minimal memory.
 
-    Peeks the first row to detect the file layout:
+    Peeks a bounded window of rows (``_LINE_ADAPTER_PEEK``) to detect the layout:
 
-    * **lm-eval / openai-evals** (tool-specific adapters): these only inspect
-      ``rows[0]`` for detection, so we peek one row, check, and if matched
-      stream the rest row-by-row through the adapter's ``parse_lines``.
-      Note: ``parse_lines`` still receives a list — but we build it
-      incrementally so only the current row is ever held alongside the result
-      list, not the raw file string.
+    * **Tool-specific line adapters** (lm-eval, openai-evals, ...): detection
+      runs against the shared ``LINE_REGISTRY`` on the peeked window, so an
+      adapter whose signature appears after leading rows (e.g. an OpenAI Evals
+      ``spec`` row following event rows) is still recognised, and a newly
+      registered adapter gains streaming support automatically. On a match the
+      remaining rows are streamed into the adapter's ``parse_lines``.
 
     * **Long-format generic** (has ``model`` + ``score`` column in row 0):
       extract records row-by-row; column layout is fixed from row 0 so no
@@ -747,38 +752,27 @@ def _stream_records_from_jsonl(
 
     gen = _iter_jsonl_lines(path)
 
-    # Peek the first row.
-    try:
-        first = next(gen)
-    except StopIteration:
+    # Peek a bounded window of rows so any registered line-format adapter can
+    # detect itself without materialising the whole file (see _LINE_ADAPTER_PEEK).
+    peek: list[dict] = []
+    for _ in range(_LINE_ADAPTER_PEEK):
+        try:
+            peek.append(next(gen))
+        except StopIteration:
+            break
+    if not peek:
         raise UnknownFormatError("The JSONL file has no data rows.")
 
-    # --- Try lm-eval adapter (only checks rows[0]) ---
-    lm_adapter = None
-    from ..adapters.lm_eval import LMEvalAdapter
-    _lm = LMEvalAdapter()
-    if _lm.detect_lines([first]):
-        lm_adapter = _lm
-
-    # --- Try openai-evals (scans for a spec row; peek up to 50 rows) ---
-    from ..adapters.openai_evals import OpenAIEvalsAdapter
-    _oai = OpenAIEvalsAdapter()
-    oai_adapter = None
-    if not lm_adapter:
-        # OpenAI Evals detection scans for a spec row anywhere in the file.
-        # We can't do this without reading ahead, so fall back for this case.
-        if _oai.detect_lines([first]):
-            oai_adapter = _oai
-
-    if lm_adapter or oai_adapter:
-        adapter = lm_adapter or oai_adapter
-        # Stream remaining rows into a list — still avoids the raw string.
-        rows = [first] + list(gen)
+    # --- Tool-specific line adapters, via the shared registry so a newly
+    #     registered adapter gains streaming support automatically ---
+    adapter = detect_line_adapter(peek)
+    if adapter is not None:
+        rows = peek + list(gen)
         records, metadata = adapter.parse_lines(rows, path=path)
         return records, adapter.source_format, metadata
 
     # --- Generic long-format: model + score keys detectable from row 0 ---
-    keys = first.keys()
+    keys = peek[0].keys()
     model_key = _first_alias(keys, MODEL_KEYS)
     score_key = _first_alias(keys, SCORE_KEYS)
     id_key = _first_alias(keys, ID_KEYS)
@@ -817,8 +811,7 @@ def _stream_records_from_jsonl(
             return
         records.append(Record(ex_id, str(row[model_key]), score, judge, metric))
 
-    _process_row(0, first)
-    for i, row in enumerate(gen, start=1):
+    for i, row in enumerate(itertools.chain(peek, gen)):
         _process_row(i, row)
 
     if not records:
@@ -944,10 +937,11 @@ def load_run_level(
                     f"Model {m!r} not found in run-level JSON; "
                     f"available: {models_in_file!r}."
                 )
-        # Validate that each value is a list of numbers before passing to
-        # np.array. A scalar yields a 0-d array that breaks _p_a_gt_b's
-        # indexing; catch this here with a clear error.
-        for m, val in raw.items():
+        # Validate only the two selected models. A scalar yields a 0-d array
+        # that breaks _p_a_gt_b's indexing; catch this here with a clear error.
+        # Extra models in the file with invalid data are not our concern.
+        for m in (model_a, model_b):
+            val = raw[m]
             if not isinstance(val, list):
                 raise ValueError(
                     f"Run-level JSON: scores for model {m!r} must be a list of "
@@ -991,12 +985,12 @@ def load_run_level(
 
     # Skip metadata columns that are never model names.
     _META_COLS = {"run", "run_id", "seed", "iteration", "trial", "index"}
-    _MODEL_COL_ALIASES = {"model", "name", "provider", "system", "variant"}
-    _SCORE_COL_ALIASES = {"score", "value", "result", "accuracy", "pass_rate"}
+    _model_aliases = frozenset(MODEL_KEYS)
+    _score_aliases = frozenset(SCORE_KEYS)
 
     # Detect long format: has a model column AND a score column.
-    model_col = next((f for f in fieldnames if f.lower() in _MODEL_COL_ALIASES), None)
-    score_col = next((f for f in fieldnames if f.lower() in _SCORE_COL_ALIASES), None)
+    model_col = next((f for f in fieldnames if f.lower() in _model_aliases), None)
+    score_col = next((f for f in fieldnames if f.lower() in _score_aliases), None)
 
     if model_col and score_col:
         # Long format: collect scores per model.

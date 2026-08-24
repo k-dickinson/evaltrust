@@ -14,6 +14,13 @@ from ..core.schema import EvalData, Finding, Status
 
 PILLAR = "Repeatability"
 
+# A mean gap this close to zero is treated as an exact tie. Averaging per-run
+# gaps can leave a residue like 1.85e-17 through floating-point cancellation
+# even when the models are genuinely tied; without this tolerance such a case
+# would slip into the winner-naming branch. Matches the atol used elsewhere
+# (see audit/predictive_rerun.py).
+_TIE_ATOL = 1e-12
+
 
 def _skip(reason: str) -> Finding:
     return Finding(
@@ -63,19 +70,26 @@ def audit_repeatability(
 
     r = gaps.size
     overall = float(gaps.mean())
-    overall_sign = np.sign(overall)
-    flips = int(np.count_nonzero(np.sign(gaps) != overall_sign))
+    tied = bool(np.isclose(overall, 0.0, rtol=0.0, atol=_TIE_ATOL))
+    if tied:
+        # Neither model leads on average; count how many runs go in the
+        # minority direction (e.g. 3 positive, 1 negative → 1 flip).
+        pos = int(np.sum(gaps > 0))
+        neg = int(np.sum(gaps < 0))
+        flips = min(pos, neg)
+    else:
+        overall_sign = np.sign(overall)
+        flips = int(np.count_nonzero(np.sign(gaps) != overall_sign))
     stability = 1.0 - flips / r
     gap_std = float(gaps.std(ddof=1)) if r > 1 else 0.0
 
     return [
-        _stability(flips, r, stability, overall, model_a, model_b),
+        _stability(flips, r, stability, overall, tied, model_a, model_b),
         _variance(gap_std, overall, model_a, model_b),
     ]
 
 
-def _stability(flips, r, stability, overall, model_a, model_b) -> Finding:
-    leader = model_b if overall >= 0 else model_a
+def _stability(flips, r, stability, overall, tied, model_a, model_b) -> Finding:
     if flips == 0:
         status = Status.PASS
     elif flips < r / 2:
@@ -83,26 +97,49 @@ def _stability(flips, r, stability, overall, model_a, model_b) -> Finding:
     else:
         status = Status.FAIL
 
+    # A near-zero mean gap means neither model leads on average, so there is no
+    # "winner" to name — reporting one (the old code always picked model_b) is
+    # misleading. Describe the tie honestly instead.
+    leader = model_b if overall > 0 else model_a
+
+    if tied:
+        title = ("Models tie consistently across reruns" if status is Status.PASS
+                 else "No stable winner across reruns")
+        how_detected = (
+            f"Across {r} reruns neither model led on average; the per-run winner "
+            f"reversed in {flips} of them (stability {stability:.0%})."
+        )
+        how_to_fix = (
+            "The two models are indistinguishable, and that holds across reruns."
+            if status is Status.PASS else
+            "Don't rely on this ranking. The models are effectively tied and the "
+            "per-run winner is just noise. Average more runs or treat them as equal."
+        )
+    else:
+        title = ("Ranking is stable across reruns" if status is Status.PASS
+                 else "Ranking changes across reruns")
+        how_detected = (
+            f"Across {r} reruns the winner was {leader} in {r - flips} of them "
+            f"and reversed in {flips} (stability {stability:.0%})."
+        )
+        how_to_fix = (
+            f"{leader} wins consistently across reruns; the ranking is reliable."
+            if status is Status.PASS else
+            "Don't rely on this ranking. Average more runs or fix the seed until "
+            "the winner stops changing."
+        )
+
     return Finding(
         pillar=PILLAR,
-        title=("Ranking is stable across reruns" if status is Status.PASS
-               else "Ranking changes across reruns"),
+        title=title,
         status=status,
         why=(
             "If the winner flips from one run to the next, the reported ranking "
             "is driven by run-to-run randomness, not a real difference. Deciding "
             "on it is a coin toss."
         ),
-        how_detected=(
-            f"Across {r} reruns the winner was {leader} in {r - flips} of them "
-            f"and reversed in {flips} (stability {stability:.0%})."
-        ),
-        how_to_fix=(
-            f"{leader} wins consistently across reruns; the ranking is reliable."
-            if status is Status.PASS else
-            "Don't rely on this ranking. Average more runs or fix the seed until "
-            "the winner stops changing."
-        ),
+        how_detected=how_detected,
+        how_to_fix=how_to_fix,
         details={"check": "rerun_stability", "runs": r, "flips": flips,
                  "stability": stability, "mean_gap": overall},
     )

@@ -43,6 +43,7 @@ def audit(
     slice_by: str | None = None,
     # --- opt-in features (mirrors AuditConfig fields) ---
     bayesian: bool = False,
+    win_rate: bool = False,
     all_pairs: bool = False,
     run_aware: bool = False,
     run_aware_future_runs: int | None = None,
@@ -77,6 +78,8 @@ def audit(
         with Bonferroni correction across slices.
     bayesian:
         Enable the optional Bayesian win-probability view (default False).
+    win_rate:
+        Enable the optional all-example paired win-rate view (default False).
     all_pairs:
         Compare every model pair in the data, not just the top two (default False).
     run_aware:
@@ -114,6 +117,7 @@ def audit(
             equivalence_margin=equivalence_margin,
             seed=seed,
             bayesian=bayesian,
+            win_rate=win_rate,
             all_pairs=all_pairs,
             run_aware=run_aware,
             run_aware_future_runs=run_aware_future_runs if run_aware else None,
@@ -197,7 +201,9 @@ def audit_run_level(
         n_resamples = config.n_resamples
 
     data: RunLevelData = load_run_level(path, model_a=model_a, model_b=model_b)
-    return audit_two_sample(data, alpha=alpha, seed=seed, n_resamples=n_resamples)
+    return audit_two_sample(
+        data, alpha=alpha, confidence=1.0 - alpha, seed=seed, n_resamples=n_resamples
+    )
 
 
 def audit_contamination(

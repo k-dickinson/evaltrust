@@ -64,6 +64,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - **Fraction-style score ingestion.** Score coercion now accepts decimal `A/B`
   and `A out of B` values as their implied ratio (#169).
+- **Preference columns using winner words.** A `winner`/`preference` column whose
+  values are winner words (`won`/`lost`/`win`/`loss`/`accept`/`reject`/
+  `positive`/`negative`/`good`/`bad`) is now correctly read as pairwise
+  preference data instead of being misclassified as a wide model-score column and
+  silently dropped. Those same words are still accepted as pass/fail scores in
+  ordinary score columns; the change only affects how a `winner`/`preference`
+  column is interpreted.
+- **Repeatability wording on a tie.** When two models are tied on average across
+  reruns (mean gap exactly 0), the stability finding no longer names an arbitrary
+  "winner" that "wins consistently." It reports the tie honestly and, when the
+  per-run direction merely flips around zero, flags it as unstable rather than
+  passing.
+- **Contamination false positives on empty items.** Benchmark or reference items
+  that are empty after normalisation are skipped in both exact- and near-match
+  detection, instead of an empty item matching another empty item (exact) or
+  scoring ratio 1.0 (near).
+- **Run-level resample count honoured in the CLI.** `evaltrust audit --run-level`
+  now uses the configured `n_resamples` instead of a hard-coded 10,000.
+- **Run-level JSON validation scope.** Only the two compared models are validated
+  for finite scores; an unrelated extra model with bad data no longer blocks a
+  valid comparison (matching the CSV paths).
+- **Run-level CSV column aliases.** Long-format run-level CSV detection now reuses
+  the canonical `MODEL_KEYS`/`SCORE_KEYS` alias tables, so columns like
+  `candidate`, `rating`, or `grade` are recognised instead of silently falling to
+  the wide-format path.
+- **Python API parity.** `audit(..., win_rate=True)` is now accepted, and
+  `audit_run_level` passes a confidence level consistent with `alpha` so its
+  interval and decision use the same error rate.
+- **Large OpenAI Evals logs.** Streaming JSONL ingestion detects tool-specific
+  line formats through the shared registry with a bounded look-ahead, so an
+  OpenAI Evals `spec` row that follows leading event rows is still recognised in
+  large files.
+- **Large object-shaped JSON streaming.** With `ijson` installed, a large JSON
+  object wrapped under any recognised key (e.g. `{"results": [...]}`), not just
+  `{"examples": [...]}`, is now streamed in a single pass — the record array is
+  parsed once and the raw file string is never materialised. Previously only
+  `examples` streamed and every object was parsed twice.
 
 ## [0.7.0] — 2026-07-17
 - **Rank stability under `--all-pairs`.** When all-pairs mode is on and a file

@@ -172,6 +172,26 @@ def test_missing_file_exits_nonzero_with_message(tmp_path):
     assert "No such" in result.output or "not" in result.output.lower()
 
 
+def test_run_level_honors_configured_n_resamples(tmp_path):
+    # The run-level path must read n_resamples from config, not hard-code 10,000.
+    from unittest import mock
+    from evaltrust.audit.two_sample import audit_two_sample as real_ats
+
+    csv = tmp_path / "rl.csv"
+    csv.write_text("A,B\n0.80,0.70\n0.82,0.72\n0.79,0.71\n0.81,0.69\n0.83,0.73\n")
+    policy = tmp_path / "policy.toml"
+    policy.write_text("n_resamples = 123\n")
+
+    with mock.patch("evaltrust.cli.audit_two_sample", wraps=real_ats) as spy:
+        result = runner.invoke(
+            app,
+            ["audit", str(csv), "--run-level", "--config", str(policy), "--json"],
+        )
+
+    assert spy.called, result.output
+    assert spy.call_args.kwargs["n_resamples"] == 123
+
+
 def test_unknown_format_exits_nonzero(tmp_path):
     result = runner.invoke(app, ["audit", write(tmp_path, "x.json", {"nope": 1})])
     assert result.exit_code != 0

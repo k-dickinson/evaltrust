@@ -352,7 +352,9 @@ def test_load_run_level_json_rejects_non_finite_values_and_booleans(
     assert "finite number" in message
 
 
-def test_load_run_level_json_validates_models_outside_the_selected_pair(tmp_path):
+def test_load_run_level_json_ignores_invalid_models_outside_the_selected_pair(tmp_path):
+    # Only the two selected models are validated; extra models with bad data
+    # must not block a valid comparison (consistent with the CSV path behaviour).
     raw = {
         "model_a": [0.1, 0.2],
         "model_b": [0.3, 0.4],
@@ -361,13 +363,12 @@ def test_load_run_level_json_validates_models_outside_the_selected_pair(tmp_path
     p = tmp_path / "strict-multi-model-scores.json"
     p.write_text(json.dumps(raw), encoding="utf-8")
 
-    with pytest.raises(ValueError) as exc_info:
-        load_run_level(str(p), model_a="model_a", model_b="model_b")
-
-    message = str(exc_info.value)
-    assert "bad_extra_model" in message
-    assert "index 1" in message
-    assert "finite number" in message
+    # Should succeed — bad_extra_model is irrelevant to the comparison.
+    data = load_run_level(str(p), model_a="model_a", model_b="model_b")
+    assert data.model_a == "model_a"
+    assert data.model_b == "model_b"
+    assert data.n_a == 2
+    assert data.n_b == 2
 
 
 # ---------------------------------------------------------------------------

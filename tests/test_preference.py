@@ -377,10 +377,14 @@ def test_missing_judge_uses_the_default_key_and_mixed_scores_survive(tmp_path):
 def test_preference_alias_does_not_hijack_an_existing_wide_score_model(
     model_column, tmp_path
 ):
+    # Use unambiguous numeric scores so the column is clearly a model score
+    # column, not a preference column.  Words like "win"/"loss" now belong to
+    # _PREFERENCE_WORDS and are treated as winner indicators in PREFERENCE_KEYS
+    # columns, which is the right call for real preference files.
     path = tmp_path / "score-alias.json"
     path.write_text(json.dumps([
-        {"id": "q1", model_column: "win", "other": "loss"},
-        {"id": "q2", model_column: "loss", "other": "win"},
+        {"id": "q1", model_column: 1.0, "other": 0.0},
+        {"id": "q2", model_column: 0.0, "other": 1.0},
     ]))
     data = load(str(path))
     assert data.models == [model_column, "other"]

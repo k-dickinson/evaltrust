@@ -125,6 +125,38 @@ class TestIterCsvRows:
         assert list(_iter_csv_rows(p)) == []
 
 
+class TestNormalizeIjsonAny:
+    """_normalize_ijson_any must convert Decimals to float at any nesting depth."""
+
+    def test_converts_decimals_in_nested_structures(self):
+        from decimal import Decimal
+        from evaltrust.core.ingest import _normalize_ijson_any
+
+        value = {
+            "flat": Decimal("0.5"),
+            "dict": {"inner": Decimal("0.25")},
+            "list": [Decimal("0.1"), Decimal("0.2")],
+            "list_of_lists": [[Decimal("0.1")], [Decimal("0.3"), Decimal("0.4")]],
+            "list_of_dicts": [{"x": Decimal("0.9")}],
+            "string": "keep",
+        }
+        out = _normalize_ijson_any(value)
+
+        assert out["flat"] == 0.5 and isinstance(out["flat"], float)
+        assert isinstance(out["dict"]["inner"], float)
+        assert all(isinstance(x, float) for x in out["list"])
+        assert all(isinstance(x, float) for row in out["list_of_lists"] for x in row)
+        assert isinstance(out["list_of_dicts"][0]["x"], float)
+        assert out["string"] == "keep"
+
+    def test_normalize_ijson_dict_is_fully_recursive(self):
+        from decimal import Decimal
+        from evaltrust.core.ingest import _normalize_ijson_dict
+
+        out = _normalize_ijson_dict({"nested": [[Decimal("0.1")]]})
+        assert isinstance(out["nested"][0][0], float)
+
+
 # ---------------------------------------------------------------------------
 # Streaming paths produce identical results to the small-file paths
 # ---------------------------------------------------------------------------
@@ -182,6 +214,61 @@ class TestStreamingMatchesInMemory:
         for ex_n, ex_s in zip(normal.examples, streamed.examples):
             assert ex_n.id == ex_s.id
             assert ex_n.scores == pytest.approx(ex_s.scores)
+
+
+# ---------------------------------------------------------------------------
+# Line-format adapters stream via the shared registry
+# ---------------------------------------------------------------------------
+
+def _oai_rows(spec_first: bool) -> list[dict]:
+    """Minimal OpenAI Evals log: a spec row plus match/sampling events.
+
+    When ``spec_first`` is False the spec row follows leading event rows, which
+    is legal in real logs and must still be detected by the bounded peek.
+    """
+    spec = {"spec": {"completion_fns": ["gpt-4"], "eval_name": "demo"}}
+    events = []
+    for i in range(3):
+        events.append({"run_id": "r", "sample_id": f"s{i}", "type": "sampling",
+                       "data": {"prompt": "p"}, "created_at": "t"})
+        events.append({"run_id": "r", "sample_id": f"s{i}", "type": "match",
+                       "data": {"correct": i % 2 == 0}, "created_at": "t"})
+    return [spec, *events] if spec_first else [events[0], spec, *events[1:]]
+
+
+class TestLineAdapterStreaming:
+    """Large JSONL line-format files route through LINE_REGISTRY when streamed."""
+
+    def _force_stream(self):
+        return mock.patch("evaltrust.core.ingest._STREAM_THRESHOLD", 0)
+
+    def _write_jsonl(self, tmp_path, name, rows):
+        text = "\n".join(json.dumps(r) for r in rows) + "\n"
+        return _write(tmp_path, name, text)
+
+    @pytest.mark.parametrize("spec_first", [True, False])
+    def test_openai_evals_streamed_matches_in_memory(self, tmp_path, spec_first):
+        path = self._write_jsonl(tmp_path, "oai.jsonl", _oai_rows(spec_first))
+
+        normal = load(path)
+        with self._force_stream():
+            streamed = load(path)
+
+        assert streamed.source_format == "openai-evals"
+        assert streamed.source_format == normal.source_format
+        assert streamed.models == normal.models
+        assert streamed.n_examples == normal.n_examples
+        for ex_n, ex_s in zip(normal.examples, streamed.examples):
+            assert ex_n.id == ex_s.id
+            assert ex_n.scores == pytest.approx(ex_s.scores)
+
+    def test_spec_after_events_is_not_misdetected_as_generic(self, tmp_path):
+        # Regression: a spec row that is not row 0 must still be claimed by the
+        # OpenAI Evals adapter under streaming, not fall through to generic.
+        path = self._write_jsonl(tmp_path, "oai_late.jsonl", _oai_rows(False))
+        with self._force_stream():
+            streamed = load(path)
+        assert streamed.source_format == "openai-evals"
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +339,101 @@ class TestJsonStreaming:
             data = load(path)
 
         assert set(data.models) == {"A", "B"}
+
+
+class TestJsonObjectStreamingWithIjson:
+    """Object-shaped JSON (``{<wrapper>: [...]}``) streams via ijson.
+
+    These require ijson so they genuinely exercise the streaming path rather
+    than the full-load fallback.
+    """
+
+    def _force_stream(self):
+        return mock.patch("evaltrust.core.ingest._STREAM_THRESHOLD", 0)
+
+    def test_native_object_streamed_matches_in_memory(self, tmp_path):
+        pytest.importorskip("ijson")
+        raw = {
+            "models": ["A", "B"],
+            "examples": [
+                {"id": f"q{i}", "scores": {"A": 0.5, "B": 0.25}} for i in range(5)
+            ],
+            # metadata after examples must still be captured (single-pass kvitems)
+            "metadata": {"suite": "demo"},
+        }
+        path = _write(tmp_path, "native.json", json.dumps(raw))
+
+        normal = load(path)
+        with self._force_stream():
+            streamed = load(path)
+
+        assert streamed.source_format == normal.source_format
+        assert streamed.models == normal.models
+        assert streamed.n_examples == normal.n_examples
+        for ex_n, ex_s in zip(normal.examples, streamed.examples):
+            assert ex_n.scores == pytest.approx(ex_s.scores)
+
+    def test_generic_wrapper_key_streamed(self, tmp_path):
+        pytest.importorskip("ijson")
+        # A non-"examples" wrapper key (previously fell back to a full load).
+        raw = {"results": [
+            {"id": "q1", "model": "A", "score": 1},
+            {"id": "q1", "model": "B", "score": 0},
+            {"id": "q2", "model": "A", "score": 0},
+            {"id": "q2", "model": "B", "score": 1},
+        ]}
+        path = _write(tmp_path, "wrapped.json", json.dumps(raw))
+
+        normal = load(path)
+        with self._force_stream():
+            streamed = load(path)
+
+        assert set(streamed.models) == {"A", "B"} == set(normal.models)
+        assert streamed.n_examples == normal.n_examples == 2
+
+    def test_decimal_scores_normalised_when_streamed(self, tmp_path):
+        pytest.importorskip("ijson")
+        # ijson yields Decimal for numbers; scores must come back as floats.
+        raw = {"examples": [{"id": "q1", "scores": {"A": 0.333, "B": 0.667}}]}
+        path = _write(tmp_path, "decimals.json", json.dumps(raw))
+        with self._force_stream():
+            streamed = load(path)
+        scores = streamed.examples[0].scores
+        assert isinstance(scores["A"], float)
+        assert scores["A"] == pytest.approx(0.333)
+
+    def test_object_streamed_does_not_read_text(self, tmp_path):
+        pytest.importorskip("ijson")
+        # The raw file string must never be materialised on the streaming path.
+        raw = {"examples": [{"id": "q1", "scores": {"A": 1, "B": 0}}]}
+        path_str = _write(tmp_path, "noreadtext.json", json.dumps(raw))
+        with (self._force_stream(),
+              mock.patch.object(Path, "read_text",
+                                side_effect=AssertionError("read_text called"))):
+            data = load(path_str)
+        assert set(data.models) == {"A", "B"}
+
+    def test_malformed_large_json_array_falls_back_to_clean_error(self, tmp_path):
+        pytest.importorskip("ijson")
+        # A truncated JSON array must surface a clean ValueError via fallback,
+        # not a raw ijson exception.
+        path = _write(tmp_path, "truncated.json", '[{"id": "q1", "model": "A"')
+        with self._force_stream(), pytest.raises(ValueError):
+            load(path)
+
+    def test_wrapper_key_suite_streamed_preserves_metrics(self, tmp_path):
+        pytest.importorskip("ijson")
+        raw = {"results": [
+            {"id": "q1", "model": "A", "metric": "correctness", "score": 1},
+            {"id": "q1", "model": "B", "metric": "correctness", "score": 0},
+            {"id": "q1", "model": "A", "metric": "safety", "score": 1},
+            {"id": "q1", "model": "B", "metric": "safety", "score": 0},
+        ]}
+        path = _write(tmp_path, "wrapped_suite.json", json.dumps(raw))
+        normal = load_suite(path)
+        with self._force_stream():
+            streamed = load_suite(path)
+        assert set(streamed.keys()) == set(normal.keys()) == {"correctness", "safety"}
 
 
 # ---------------------------------------------------------------------------

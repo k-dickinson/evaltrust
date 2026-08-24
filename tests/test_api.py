@@ -51,6 +51,20 @@ def test_audit_accepts_two_paths_for_single_model_files(tmp_path):
     assert {report.model_a, report.model_b} == {"gpt", "claude"}
 
 
+def test_audit_accepts_win_rate_kwarg():
+    # win_rate is opt-in: the direct kwarg must be accepted (not raise TypeError)
+    # and must surface the paired win-rate finding.
+    data = make_data({"A": [0, 1] * 60, "B": [1, 0] * 60}, 120)
+
+    default = audit(data)
+    assert not any(f.details.get("check") == "paired_win_rate"
+                   for f in default.findings)
+
+    enabled = audit(data, win_rate=True)
+    assert any(f.details.get("check") == "paired_win_rate"
+               for f in enabled.findings)
+
+
 def test_finding_to_dict_has_golden_rule_fields():
     f = Finding(pillar="P", title="t", status=Status.WARN,
                 why="w", how_detected="h", how_to_fix="x", details={"p_value": 0.2})

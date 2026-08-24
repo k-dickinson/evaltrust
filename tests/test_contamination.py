@@ -78,6 +78,22 @@ def test_run_contamination_audit_empty():
     assert result.contamination_fraction == 0.0
 
 
+def test_whitespace_only_item_is_not_flagged():
+    # An item that is empty after normalisation must not match everything at
+    # ratio 1.0 (SequenceMatcher('', '') == 1.0).
+    result = run_contamination_audit(["   "], ["some real reference text", ""])
+    assert result.exact_matches == 0
+    assert result.near_matches == 0
+    assert result.contamination_fraction == 0.0
+
+
+def test_empty_reference_entry_does_not_match_real_item():
+    # An empty reference entry must not near-match a real benchmark item.
+    result = run_contamination_audit(["a genuine benchmark prompt"], ["", "  "])
+    assert result.near_matches == 0
+    assert result.contamination_fraction == 0.0
+
+
 def test_run_contamination_audit_no_overlap():
     benchmark = ["A", "B", "C"]
     reference = ["X", "Y", "Z"]

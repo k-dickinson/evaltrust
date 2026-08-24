@@ -27,6 +27,16 @@ from .common import (
 _LIST_WRAPPERS = ("results", "data", "rows", "outputs", "samples", "records",
                   "predictions", "evaluations")
 
+# Words that serve as winner/preference indicators in pairwise comparison columns.
+# These are treated as preference evidence (not score evidence) in _is_preference_column,
+# even if some overlap with the coerce_score vocabulary.
+_PREFERENCE_WORDS = frozenset({
+    "won", "win", "lost", "loss",
+    "accept", "reject",
+    "positive", "negative",
+    "good", "bad",
+})
+
 
 def _first_alias(keys, aliases) -> str | None:
     """Return the actual key whose lower-cased name is in ``aliases``."""
@@ -96,6 +106,8 @@ def _is_preference_column(rows, key) -> bool:
             return False
         if value.strip().casefold() == Preference.TIE.value:
             return True
+        if value.strip().casefold() in _PREFERENCE_WORDS:
+            continue  # winner-indicator word; treat as non-score evidence
         try:
             coerce_score(value)
         except ValueError:

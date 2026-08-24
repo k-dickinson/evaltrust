@@ -207,7 +207,7 @@ def audit(
             rl_data,
             alpha=cfg.alpha,
             confidence=1.0 - cfg.alpha,
-            n_resamples=10_000,
+            n_resamples=cfg.n_resamples,
             seed=cfg.seed,
         )
         from .core.schema import Status
