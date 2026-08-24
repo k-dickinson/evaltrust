@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Opt-in `pass@k` for sampling-based code evals.** Added `--k` (API `audit(..., k=...)`, config `k`) which reads per-task repeated `runs` (each run a 0/1 completion; a pass scores exactly `1.0`) and reports each model's unbiased `pass@k` estimate `1 - C(n-c, k) / C(n, k)` — computed in the numerically stable product form — plus the paired difference over tasks that have at least `k` runs for both models. The interval is a seeded percentile bootstrap over tasks (per-model and difference intervals share resamples), so it reflects task sampling on top of the estimator's completion sampling. Tasks with fewer than `k` runs for either model are skipped and counted, and run values outside `{0, 1}` are counted as failures and reported. The collapsed-score path is unchanged; with no `k` set, output is byte-for-byte identical (#164).
 - **Edge-case hardening.** Render zero-variance paired effects as unbounded, withhold run-level effect labels below two runs per model, and reject non-finite or boolean run-level JSON scores (#154).
 - **Opt-in predictive rerun audit wiring.** Added `--run-aware`, explicit `--future-runs`, eligibility SKIP counts, and an advisory normal-theory predictive finding without changing default output or the verdict (#131).
 - **Fixed-example predictive rerun statistics.** Added a deterministic

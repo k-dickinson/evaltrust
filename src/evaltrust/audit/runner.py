@@ -18,6 +18,7 @@ from .rank_stability import audit_rank_stability
 from .benchmark_health import audit_benchmark_health
 from .judge_calibration import audit_judge_calibration
 from .judge_reliability import audit_judge_reliability
+from .pass_at_k import audit_pass_at_k
 from .preference import audit_preferences
 from .single import audit_single
 from .repeatability import audit_repeatability
@@ -247,6 +248,11 @@ def _comparison(data, model_a, model_b, cfg, significant=None,
 
     if cfg.win_rate:
         findings += audit_win_rate(data, model_a, model_b, seed=cfg.seed)
+
+    if cfg.k is not None and data.has_runs:
+        findings += audit_pass_at_k(
+            data, model_a, model_b, cfg.k,
+            n_resamples=cfg.n_resamples, seed=cfg.seed)
 
     if cfg.all_pairs:
         findings += audit_all_pairs(data, cfg)
