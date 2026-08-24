@@ -48,6 +48,7 @@ def audit(
     run_aware: bool = False,
     run_aware_future_runs: int | None = None,
     correction: str = "bonferroni",
+    k: int | None = None,
     # --- efficiency (advisory; absent when not supplied) ---
     token_count_data: "EvalData | None" = None,
     latency_data: "EvalData | None" = None,
@@ -90,6 +91,11 @@ def audit(
     correction:
         Multiple-comparison correction for suite audits: ``"bonferroni"``,
         ``"holm"``, or ``"none"`` (default ``"bonferroni"``).
+    k:
+        Opt-in ``pass@k`` sampling budget.  When set (and the input carries
+        per-task repeated ``runs`` for both models), adds an advisory finding
+        with each model's unbiased ``pass@k`` and the paired difference over
+        tasks that have at least ``k`` runs.  Default ``None`` (off).
     token_count_data:
         Optional :class:`EvalData` whose ``scores`` carry per-example token
         counts for the same two models.  When supplied, an advisory
@@ -122,6 +128,7 @@ def audit(
             run_aware=run_aware,
             run_aware_future_runs=run_aware_future_runs if run_aware else None,
             correction=correction,
+            k=k,
         )
 
     kw = dict(config=config, threshold=threshold, slice_by=slice_by,

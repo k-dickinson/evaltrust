@@ -182,6 +182,7 @@ Useful flags:
 | `--slice-by` | Break the comparison down by a per-example attribute (category, difficulty, language) and flag any subgroup that regresses. |
 | `--all-pairs` | With more than two models, compare every pair (not just the top two), corrected across the pairs. |
 | `--bayesian` | Add a Bayesian view: the probability one model wins more often, with a credible interval. |
+| `--k` | Add the paired `pass@k` comparison for sampling-based code evals: each model's unbiased `pass@k` and the difference, with a bootstrap interval. Reads per-task repeated runs; needs at least `k` runs per task. |
 | `--correction` | Multi-metric correction: `bonferroni` (default), `holm`, or `none`. |
 | `--fail-under` | Exit non-zero if confidence is below a level (`high`/`moderate`/`low`) - gate CI. |
 | `--threshold` | For a single-model eval, the target score to test against (e.g. `0.8`). |

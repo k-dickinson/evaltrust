@@ -54,6 +54,7 @@ class AuditConfig:
     run_aware_future_runs: int | None = None  # explicit future runs for that view
     correction: str = "bonferroni"          # family correction: bonferroni | holm | none
     all_pairs: bool = False                 # compare every model pair (opt-in)
+    k: int | None = None                    # pass@k sampling budget (opt-in)
     # metrics that must reach HIGH; any below HIGH → suite is LOW immediately
     gated_metrics: frozenset = field(default_factory=frozenset)
 
@@ -66,6 +67,15 @@ class AuditConfig:
             raise ValueError(
                 "run_aware_future_runs must be a positive integer when "
                 "run_aware is enabled"
+            )
+
+        if self.k is not None and (
+            isinstance(self.k, bool)
+            or not isinstance(self.k, Integral)
+            or self.k < 1
+        ):
+            raise ValueError(
+                f"k must be a positive integer for pass@k, got {self.k!r}."
             )
 
         if self.score_ceiling is not None:
@@ -105,6 +115,7 @@ class AuditConfig:
             self.run_aware_future_runs,
             self.correction,
             self.all_pairs,
+            self.k,
             self.gated_metrics,
         ))
 

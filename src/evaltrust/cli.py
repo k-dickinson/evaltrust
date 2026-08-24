@@ -123,6 +123,13 @@ def audit(
     all_pairs: Optional[bool] = typer.Option(
         None, "--all-pairs/--no-all-pairs",
         help="Also compare every model pair with one family-wide correction."),
+    k: Optional[int] = typer.Option(
+        None, "--k",
+        help=(
+            "Add the paired pass@k comparison (unbiased estimator + bootstrap "
+            "interval) using per-task repeated runs. Tasks with fewer than k "
+            "runs for either model are skipped."
+        )),
     config_path: Optional[str] = typer.Option(
         None, "--config", help="Path to a config TOML (default: .evaltrust.toml or pyproject)."),
     reference_judge: Optional[str] = typer.Option(
@@ -185,7 +192,8 @@ def audit(
                                    ("run_aware_future_runs", future_runs),
                                    ("reference_judge", reference_judge),
                                    ("correction", correction),
-                                   ("all_pairs", all_pairs))
+                                   ("all_pairs", all_pairs),
+                                   ("k", k))
                  if v is not None}
     try:
         cfg = replace(cfg, **overrides)
